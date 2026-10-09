@@ -1,0 +1,15 @@
+bin/
+obj/
+
+.vs/
+*.user
+
+todo.Web/node_modules/
+todo.Web/.angular/
+todo.Web/dist/
+todo.Web/test-results/
+todo.Web/playwright-report/
+
+logs/
+TestResults/
+test-kullanicisi.txt

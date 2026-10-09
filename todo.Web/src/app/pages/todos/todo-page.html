@@ -1,0 +1,345 @@
+<div class="page-background">
+  <div class="workspace">
+    <aside class="sidebar">
+      <div class="brand">
+        <div>
+          <p class="brand-name">Todo</p>
+          <p class="brand-caption">Gününü düzenle</p>
+        </div>
+      </div>
+
+      <div class="sidebar-heading">
+        <span>Listelerim</span>
+        <span class="list-count">{{ todoLists.length }}</span>
+      </div>
+
+      <form class="create-list-form" (ngSubmit)="createList()">
+        <input
+          nz-input
+          name="newListName"
+          [(ngModel)]="newListName"
+          placeholder="Yeni liste adı"
+          maxlength="80"
+          aria-label="Yeni liste adı"
+        />
+        <button
+          nz-button
+          nzType="primary"
+          type="submit"
+          [nzLoading]="isSavingList"
+          aria-label="Liste oluştur"
+        >
+          +
+        </button>
+      </form>
+
+      <nav class="list-navigation" aria-label="Görev listeleri">
+        @if (isLoadingLists && todoLists.length === 0) {
+          <p class="muted-message">Listeler yükleniyor…</p>
+        }
+
+        @for (list of todoLists; track list.id) {
+          <button
+            class="list-navigation-item"
+            [class.selected]="selectedList?.id === list.id"
+            type="button"
+            (click)="selectList(list)"
+          >
+            <span class="list-dot"></span>
+            <span class="list-name">{{ list.name }}</span>
+            @if (selectedList?.id === list.id) {
+              <span class="selected-arrow">›</span>
+            }
+          </button>
+        }
+
+        @if (!isLoadingLists && todoLists.length === 0) {
+          <p class="muted-message">Henüz liste yok. Yukarıdan ilk listeni oluştur.</p>
+        }
+      </nav>
+
+      <div class="sidebar-footer">
+        <span class="connection-dot" [class.offline]="!isApiAvailable"></span>
+        <span>API</span>
+        <span class="connection-state">{{ isApiAvailable ? 'bağlı' : 'bağlantı yok' }}</span>
+      </div>
+    </aside>
+
+    <main class="main-content">
+      <header class="top-bar">
+        <div>
+          <p class="eyebrow">KİŞİSEL PLANLAYICIN</p>
+          <h1>Görevlerin</h1>
+        </div>
+        <div class="top-bar-actions">
+          @if (selectedList !== null) {
+            <button
+              nz-button
+              nzType="primary"
+              type="button"
+              (click)="isCreatingTodo = !isCreatingTodo"
+            >
+              + Yeni görev
+            </button>
+          }
+          @if (auth.currentUser(); as user) {
+            <div class="account-menu">
+              <span class="account-name" [title]="user.email">{{ user.displayName }}</span>
+              @if (auth.isAdmin()) {
+                <a nz-button nzType="link" routerLink="/admin/users">Kullanıcılar</a>
+              }
+              <button nz-button type="button" (click)="logout()">Çıkış yap</button>
+            </div>
+          }
+        </div>
+      </header>
+
+      @if (selectedList === null) {
+        <section class="welcome-card">
+          <p class="eyebrow">BAŞLAMAYA HAZIR</p>
+          <h2>İlk listeni oluştur</h2>
+          <p>İş, ev veya aklındaki başka şeyler için bir liste ekle.</p>
+        </section>
+      } @else {
+        <section class="list-header-card">
+          @if (isRenamingList) {
+            <form class="rename-list-form" (ngSubmit)="saveListName()">
+              <input
+                nz-input
+                name="renamedListName"
+                [(ngModel)]="renamedListName"
+                maxlength="80"
+                aria-label="Liste adı"
+              />
+              <button nz-button nzType="primary" type="submit" [nzLoading]="isSavingList">
+                Kaydet
+              </button>
+              <button nz-button type="button" (click)="isRenamingList = false">
+                Vazgeç
+              </button>
+            </form>
+          } @else {
+            <div class="list-title-block">
+              <p class="eyebrow">SEÇİLİ LİSTE</p>
+              <h2>{{ selectedList.name }}</h2>
+              <p class="list-subtitle">
+                {{ todos.length }} görev
+                @if (todos.length > 0) {
+                  <span>·</span>
+                  {{ completedTodoCount() }} tamamlandı
+                }
+              </p>
+            </div>
+            <div class="list-actions">
+              <button nz-button type="button" (click)="startRenamingList()">Yeniden adlandır</button>
+              <button
+                nz-button
+                nzDanger
+                nz-popconfirm
+                nzPopconfirmTitle="Bu liste ve içindeki bütün görevler silinsin mi?"
+                (nzOnConfirm)="deleteList()"
+                type="button"
+              >
+                Listeyi sil
+              </button>
+            </div>
+          }
+        </section>
+
+        @if (isCreatingTodo) {
+          <section class="editor-card new-todo-card">
+            <div class="editor-heading">
+              <div>
+                <p class="eyebrow">LİSTEYE EKLE</p>
+                <h2>Yeni görev</h2>
+              </div>
+              <button nz-button type="button" (click)="isCreatingTodo = false">Kapat</button>
+            </div>
+
+            <form class="todo-form" (ngSubmit)="createTodo()">
+              <label class="field-group field-full">
+                <span>Görev adı</span>
+                <input
+                  nz-input
+                  name="newTodoTitle"
+                  [(ngModel)]="newTodoTitle"
+                  placeholder="Örneğin: Raporu tamamla"
+                  maxlength="120"
+                  required
+                />
+              </label>
+
+              <label class="field-group field-full">
+                <span>Açıklama <small>İsteğe bağlı</small></span>
+                <textarea
+                  nz-input
+                  name="newTodoDescription"
+                  [(ngModel)]="newTodoDescription"
+                  placeholder="Görevle ilgili kısa bir not"
+                  maxlength="1000"
+                  rows="3"
+                ></textarea>
+              </label>
+
+              <label class="field-group">
+                <span>Bitiş tarihi <small>İsteğe bağlı</small></span>
+                <input
+                  nz-input
+                  name="newTodoDueAtLocal"
+                  [(ngModel)]="newTodoDueAtLocal"
+                  [min]="minimumDueAtLocal()"
+                  type="datetime-local"
+                />
+              </label>
+
+              <div class="field-group">
+                <label for="newTodoPriority">Öncelik</label>
+                <nz-select nzId="newTodoPriority" name="newTodoPriority" [(ngModel)]="newTodoPriority" nzPlaceHolder="Öncelik seç">
+                  <nz-option nzValue="Low" nzLabel="Düşük"></nz-option>
+                  <nz-option nzValue="Normal" nzLabel="Normal"></nz-option>
+                  <nz-option nzValue="High" nzLabel="Yüksek"></nz-option>
+                </nz-select>
+              </div>
+
+              <div class="form-actions field-full">
+                <button nz-button nzType="primary" type="submit" [nzLoading]="isSavingTodo">
+                  Görevi oluştur
+                </button>
+                <button nz-button type="button" (click)="isCreatingTodo = false">Vazgeç</button>
+              </div>
+            </form>
+          </section>
+        }
+
+        <section class="todo-section">
+          <div class="section-heading">
+            <div>
+              <p class="eyebrow">BUGÜNÜN PLANI</p>
+              <h2>Görev listesi</h2>
+            </div>
+            @if (todos.length > 0) {
+              <span class="task-total">{{ completedTodoCount() }} / {{ todos.length }} tamamlandı</span>
+            }
+          </div>
+
+          @if (isLoadingTodos) {
+            <div class="loading-state">Görevler yükleniyor…</div>
+          } @else if (todos.length === 0) {
+            <div class="empty-state">
+              <h3>Bu listede henüz görev yok</h3>
+              <p>İlk görevini ekleyerek planını oluşturmaya başla.</p>
+              <button nz-button nzType="primary" type="button" (click)="isCreatingTodo = true">
+                + İlk görevi ekle
+              </button>
+            </div>
+          } @else {
+            <div class="todo-list">
+              @for (todo of todos; track todo.id) {
+                <article class="todo-card" [class.todo-completed]="todo.isCompleted">
+                  @if (editingTodoId === todo.id) {
+                    <div class="editor-card todo-edit-card">
+                      <div class="editor-heading">
+                        <div>
+                          <p class="eyebrow">GÖREVİ DÜZENLE</p>
+                          <h2>Bilgileri güncelle</h2>
+                        </div>
+                        <button nz-button type="button" (click)="cancelEditingTodo()">Kapat</button>
+                      </div>
+
+                      <form class="todo-form" (ngSubmit)="saveTodo(todo)">
+                        <label class="field-group field-full">
+                          <span>Görev adı</span>
+                          <input
+                            nz-input
+                            [name]="'editedTitle' + todo.id"
+                            [(ngModel)]="editedTodoTitle"
+                            maxlength="120"
+                            required
+                          />
+                        </label>
+                        <label class="field-group field-full">
+                          <span>Açıklama</span>
+                          <textarea
+                            nz-input
+                            [name]="'editedDescription' + todo.id"
+                            [(ngModel)]="editedTodoDescription"
+                            maxlength="1000"
+                            rows="3"
+                          ></textarea>
+                        </label>
+                        <label class="field-group">
+                          <span>Bitiş tarihi</span>
+                          <input
+                            nz-input
+                            [name]="'editedDueAt' + todo.id"
+                            [(ngModel)]="editedTodoDueAtLocal"
+                            [min]="minimumDueAtLocal()"
+                            type="datetime-local"
+                          />
+                        </label>
+                        <div class="field-group">
+                          <label [attr.for]="'editedPriority' + todo.id">Öncelik</label>
+                          <nz-select [nzId]="'editedPriority' + todo.id" [name]="'editedPriority' + todo.id" [(ngModel)]="editedTodoPriority">
+                            <nz-option nzValue="Low" nzLabel="Düşük"></nz-option>
+                            <nz-option nzValue="Normal" nzLabel="Normal"></nz-option>
+                            <nz-option nzValue="High" nzLabel="Yüksek"></nz-option>
+                          </nz-select>
+                        </div>
+                        <div class="form-actions field-full">
+                          <button nz-button nzType="primary" type="submit" [nzLoading]="isSavingTodo">
+                            Değişiklikleri kaydet
+                          </button>
+                          <button nz-button type="button" (click)="cancelEditingTodo()">Vazgeç</button>
+                        </div>
+                      </form>
+                    </div>
+                  } @else {
+                    <div class="todo-card-main">
+                      <label class="completion-control" [attr.aria-label]="todo.title + ' tamamlandı'">
+                        <input
+                          type="checkbox"
+                          [checked]="todo.isCompleted"
+                          (change)="setTodoCompletion(todo, $any($event.target).checked)"
+                        />
+                        <span class="custom-checkbox"></span>
+                      </label>
+
+                      <div class="todo-copy">
+                        <h3>{{ todo.title }}</h3>
+                        @if (todo.description) {
+                          <p>{{ todo.description }}</p>
+                        }
+                        <div class="todo-metadata">
+                          <nz-tag [nzColor]="priorityColor(todo.priority)">
+                            {{ priorityLabel(todo.priority) }} öncelik
+                          </nz-tag>
+                          @if (todo.dueAtUtc) {
+                            <span class="due-date">Bitiş: {{ todo.dueAtUtc | date: 'dd.MM.yyyy HH:mm' }}</span>
+                          }
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="todo-actions">
+                      <button nz-button type="button" (click)="startEditingTodo(todo)">Düzenle</button>
+                      <button
+                        nz-button
+                        nzDanger
+                        nz-popconfirm
+                        nzPopconfirmTitle="Bu görev silinsin mi?"
+                        (nzOnConfirm)="deleteTodo(todo)"
+                        type="button"
+                      >
+                        Sil
+                      </button>
+                    </div>
+                  }
+                </article>
+              }
+            </div>
+          }
+        </section>
+      }
+    </main>
+  </div>
+</div>

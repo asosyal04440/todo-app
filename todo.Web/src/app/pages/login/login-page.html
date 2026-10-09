@@ -1,0 +1,99 @@
+<div class="login-background">
+  <main class="login-card">
+    <div class="brand">
+      <p class="brand-name">Todo</p>
+      <p class="brand-caption">Gününü düzenle</p>
+    </div>
+
+    <div class="mode-switch" role="tablist" aria-label="Giriş türü">
+      <button
+        type="button"
+        role="tab"
+        [class.active]="mode() === 'login'"
+        [attr.aria-selected]="mode() === 'login'"
+        (click)="switchMode('login')"
+      >
+        Giriş yap
+      </button>
+      <button
+        type="button"
+        role="tab"
+        [class.active]="mode() === 'register'"
+        [attr.aria-selected]="mode() === 'register'"
+        (click)="switchMode('register')"
+      >
+        Kayıt ol
+      </button>
+    </div>
+
+    <form class="login-form" (ngSubmit)="submit()">
+      @if (mode() === 'register') {
+        <label class="field-group">
+          <span>Adın</span>
+          <input
+            nz-input
+            name="displayName"
+            [(ngModel)]="displayName"
+            autocomplete="name"
+            maxlength="100"
+          />
+        </label>
+      }
+
+      <label class="field-group">
+        <span>E-posta</span>
+        <input
+          nz-input
+          name="email"
+          type="email"
+          [(ngModel)]="email"
+          autocomplete="email"
+          maxlength="256"
+        />
+      </label>
+
+      <label class="field-group">
+        <span>Şifre</span>
+        <input
+          nz-input
+          name="password"
+          type="password"
+          [(ngModel)]="password"
+          [attr.autocomplete]="mode() === 'login' ? 'current-password' : 'new-password'"
+          maxlength="128"
+        />
+        @if (mode() === 'register') {
+          <small>En az 8 karakter; harf ve rakam içermeli.</small>
+        }
+      </label>
+
+      @if (errorMessage(); as message) {
+        <p class="error-message" role="alert">{{ message }}</p>
+      }
+
+      <button nz-button nzType="primary" nzBlock type="submit" [nzLoading]="isSubmitting()">
+        {{ mode() === 'login' ? 'Giriş yap' : 'Hesap oluştur' }}
+      </button>
+    </form>
+
+    <div class="divider"><span>veya</span></div>
+
+    @switch (googleStatus()) {
+      @case ('ready') {
+        <div #googleButton class="google-button"></div>
+      }
+      @case ('disabled') {
+        <p class="google-note">
+          Google ile giriş henüz yapılandırılmadı. API'deki
+          <code>Authentication:Google:ClientId</code> ayarını doldur.
+        </p>
+      }
+      @case ('unavailable') {
+        <p class="google-note">Google ile giriş şu anda kullanılamıyor.</p>
+      }
+      @default {
+        <p class="google-note">Google ile giriş hazırlanıyor…</p>
+      }
+    }
+  </main>
+</div>
