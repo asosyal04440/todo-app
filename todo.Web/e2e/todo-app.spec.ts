@@ -1,4 +1,5 @@
 import { type Page } from '@playwright/test';
+import { writeFile } from 'node:fs/promises';
 import { apiUrl, expect, test } from './fixtures';
 
 interface TodoListResponse {
@@ -37,6 +38,60 @@ test.afterEach(async ({ request }) => {
   expect([204, 404]).toContain(response.status());
 });
 
+test('uses the compiled API setting without fetching a runtime configuration file', async ({
+  page,
+}) => {
+  const runtimeRequests: string[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname.endsWith('/runtime-config.json'))
+      runtimeRequests.push(request.url());
+  });
+  await page.reload();
+  await expect(page.locator('.connection-state')).toHaveText('bağlı');
+  expect(runtimeRequests).toEqual([]);
+});
+
+test('the split workspace and editing form fit desktop and mobile viewports', async ({
+  page,
+  request,
+}, testInfo) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+  const list = await createList(page, `E2E yerleşim ${Date.now()}`);
+  createdListId = list.id;
+  const response = await request.post(`${apiUrl}/todo-lists/${list.id}/todos`, {
+    data: {
+      title: 'Yerleşim kontrolü',
+      description: 'Form, görev satırı ve menü ayrı component.',
+      dueAtUtc: null,
+      priority: 'High',
+    },
+  });
+  expect(response.status()).toBe(201);
+  await page.reload();
+  await page.getByRole('button', { name: 'Düzenle' }).click();
+  const editor = page.locator('.todo-edit-card');
+  await expect(editor.getByRole('textbox', { name: 'Görev adı' })).toHaveValue('Yerleşim kontrolü');
+  const desktopSidebar = await page.locator('.sidebar').boundingBox();
+  const desktopMain = await page.locator('.main-content').boundingBox();
+  expect(desktopSidebar).not.toBeNull();
+  expect(desktopMain).not.toBeNull();
+  expect(desktopMain!.x).toBeGreaterThanOrEqual(desktopSidebar!.x + desktopSidebar!.width);
+  await expect(editor.locator('.todo-form')).toHaveCSS('grid-template-columns', /\d.*px \d.*px/);
+  await page.screenshot({ path: testInfo.outputPath('desktop.png'), fullPage: true });
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  const mobileSidebar = await page.locator('.sidebar').boundingBox();
+  const mobileMain = await page.locator('.main-content').boundingBox();
+  expect(mobileSidebar).not.toBeNull();
+  expect(mobileMain).not.toBeNull();
+  expect(mobileMain!.y).toBeGreaterThanOrEqual(mobileSidebar!.y + mobileSidebar!.height - 1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  );
+  await expect(editor.locator('.todo-form')).toHaveCSS('grid-template-columns', /^\d+(\.\d+)?px$/);
+  await page.screenshot({ path: testInfo.outputPath('mobile.png'), fullPage: true });
+});
+
 test('a task can be created, loaded again, edited, completed, and deleted through the UI', async ({
   page,
   request,
@@ -57,9 +112,10 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   await page.getByLabel('Açıklama').fill(originalDescription);
   await page.getByLabel('Bitiş tarihi').fill(originalDueAt);
 
-  const createTodoResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos` &&
-    response.request().method() === 'POST',
+  const createTodoResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}/todos` &&
+      response.request().method() === 'POST',
   );
 
   await page.getByRole('button', { name: 'Görevi oluştur' }).click();
@@ -107,9 +163,10 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   await expect(highPriorityOption).toBeVisible();
   await highPriorityOption.click();
 
-  const updateTodoResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos/${createdTodo.id}` &&
-    response.request().method() === 'PUT',
+  const updateTodoResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}/todos/${createdTodo.id}` &&
+      response.request().method() === 'PUT',
   );
 
   await editCard.getByRole('button', { name: 'Değişiklikleri kaydet' }).click();
@@ -126,13 +183,17 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   taskCard = page.locator('.todo-card').filter({ hasText: updatedTitle });
   await expect(taskCard).toContainText('Yüksek öncelik');
 
-  const completionResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos/${createdTodo.id}/completion` &&
-    response.request().method() === 'PATCH',
+  const completionResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        `/api/todo-lists/${list.id}/todos/${createdTodo.id}/completion` &&
+      response.request().method() === 'PATCH',
   );
 
   await taskCard.locator('.completion-control').click();
-  await expect(taskCard.getByRole('checkbox', { name: `${updatedTitle} tamamlandı` })).toBeChecked();
+  await expect(
+    taskCard.getByRole('checkbox', { name: `${updatedTitle} tamamlandı` }),
+  ).toBeChecked();
 
   const completionResponse = await completionResponsePromise;
   expect(completionResponse.status()).toBe(200);
@@ -143,13 +204,17 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   );
   expect((await persistedTodoResponse.json()).isCompleted).toBe(true);
 
-  const incompleteResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos/${createdTodo.id}/completion` &&
-    response.request().method() === 'PATCH',
+  const incompleteResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname ===
+        `/api/todo-lists/${list.id}/todos/${createdTodo.id}/completion` &&
+      response.request().method() === 'PATCH',
   );
 
   await taskCard.locator('.completion-control').click();
-  await expect(taskCard.getByRole('checkbox', { name: `${updatedTitle} tamamlandı` })).not.toBeChecked();
+  await expect(
+    taskCard.getByRole('checkbox', { name: `${updatedTitle} tamamlandı` }),
+  ).not.toBeChecked();
 
   const incompleteResponse = await incompleteResponsePromise;
   expect(incompleteResponse.status()).toBe(200);
@@ -160,9 +225,10 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   );
   expect((await incompleteTodoResponse.json()).isCompleted).toBe(false);
 
-  const deleteTodoResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos/${createdTodo.id}` &&
-    response.request().method() === 'DELETE',
+  const deleteTodoResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}/todos/${createdTodo.id}` &&
+      response.request().method() === 'DELETE',
   );
 
   await taskCard.getByRole('button', { name: 'Sil' }).click();
@@ -179,6 +245,86 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
   expect(deletedTodoResponse.status()).toBe(404);
 });
 
+test('task date validation matches the API and corrected creation appears in Network', async ({
+  page,
+  request,
+}, testInfo) => {
+  const list = await createList(page, `E2E tarih kontrolü ${Date.now()}`);
+  const past = new Date(Date.now() - 24 * 60 * 60_000);
+  const endpoint = `/api/todo-lists/${list.id}/todos`;
+
+  const rejected = await request.post(`${apiUrl}/todo-lists/${list.id}/todos`, {
+    data: {
+      title: 'Geçmiş tarih',
+      description: null,
+      dueAtUtc: past.toISOString(),
+      priority: 'Normal',
+    },
+  });
+  expect(rejected.status()).toBe(400);
+  const problem = await rejected.json();
+  expect(problem.errors.DueAtUtc).toContain("'Bitiş tarihi' geçmişte olamaz.");
+
+  const browserPosts: { url: string; method: string; payload: unknown }[] = [];
+  page.on('request', (request) => {
+    if (new URL(request.url()).pathname === endpoint && request.method() === 'POST')
+      browserPosts.push({
+        url: request.url(),
+        method: request.method(),
+        payload: request.postDataJSON(),
+      });
+  });
+
+  await page.getByRole('button', { name: /Yeni görev/ }).click();
+  await page.getByLabel('Görev adı').fill('Tarihi düzeltilen görev');
+  await page.getByLabel('Bitiş tarihi').fill(toLocalDateTimeInput(past));
+  await page.getByRole('button', { name: 'Görevi oluştur' }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Bitiş tarihi geçmişte olamaz.' }),
+  ).toBeVisible();
+  expect(browserPosts).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath('past-date-validation.png'), fullPage: true });
+
+  const tooFar = new Date();
+  tooFar.setUTCFullYear(tooFar.getUTCFullYear() + 11);
+  await page.getByLabel('Bitiş tarihi').fill(toLocalDateTimeInput(tooFar));
+  await page.getByRole('button', { name: 'Görevi oluştur' }).click();
+  await expect(
+    page.getByRole('alert').filter({ hasText: 'Bitiş tarihi en fazla 10 yıl sonrası olabilir.' }),
+  ).toBeVisible();
+  expect(browserPosts).toEqual([]);
+
+  await page
+    .getByLabel('Bitiş tarihi')
+    .fill(toLocalDateTimeInput(new Date(Date.now() + 24 * 60 * 60_000)));
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === endpoint && response.request().method() === 'POST',
+  );
+  await page.getByRole('button', { name: 'Görevi oluştur' }).click();
+  const response = await responsePromise;
+  expect(response.status()).toBe(201);
+  const saved = await response.json();
+  expect(saved.title).toBe('Tarihi düzeltilen görev');
+  await expect(page.locator('.todo-card').filter({ hasText: saved.title })).toBeVisible();
+  expect(browserPosts).toHaveLength(1);
+
+  const evidence = testInfo.outputPath('todo-create-network.json');
+  await writeFile(
+    evidence,
+    JSON.stringify(
+      {
+        rejectedByApi: { status: rejected.status(), response: problem },
+        browserRequests: browserPosts,
+        created: { status: response.status(), response: saved },
+      },
+      null,
+      2,
+    ),
+  );
+  await testInfo.attach('todo-create-network', { path: evidence, contentType: 'application/json' });
+});
+
 test('a list can be renamed and deleting it removes its tasks', async ({ page, request }) => {
   const list = await createList(page, `E2E liste akışı ${Date.now()}`);
   createdListId = list.id;
@@ -190,9 +336,10 @@ test('a list can be renamed and deleting it removes its tasks', async ({ page, r
   await renamedListInput.fill(renamedListName);
   await expect(renamedListInput).toHaveValue(renamedListName);
 
-  const renameListResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}` &&
-    response.request().method() === 'PUT',
+  const renameListResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}` &&
+      response.request().method() === 'PUT',
   );
 
   await page.getByRole('button', { name: 'Kaydet' }).click();
@@ -212,9 +359,10 @@ test('a list can be renamed and deleting it removes its tasks', async ({ page, r
   await page.getByRole('button', { name: 'Listeyi sil' }).click();
   await expect(page.getByText('Bu liste ve içindeki bütün görevler silinsin mi?')).toBeVisible();
 
-  const deleteListResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}` &&
-    response.request().method() === 'DELETE',
+  const deleteListResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}` &&
+      response.request().method() === 'DELETE',
   );
 
   await confirmPopconfirm(page);
@@ -288,9 +436,10 @@ test('duplicate names are rejected in the UI and by the API', async ({ page, req
 
   await page.getByRole('button', { name: /Yeni görev/ }).click();
   await page.getByLabel('Görev adı').fill('  RAPORU teslim et ');
-  const duplicateTodoResponsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${list.id}/todos` &&
-    response.request().method() === 'POST',
+  const duplicateTodoResponsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${list.id}/todos` &&
+      response.request().method() === 'POST',
   );
   await page.getByRole('button', { name: 'Görevi oluştur' }).click();
   expect((await duplicateTodoResponsePromise).status()).toBe(409);
@@ -300,7 +449,10 @@ test('duplicate names are rejected in the UI and by the API', async ({ page, req
     data: { name: list.name.toUpperCase() },
   });
   expect(duplicateListResponse.status()).toBe(409);
-  const duplicateProblem = (await duplicateListResponse.json()) as { title: string; traceId: string };
+  const duplicateProblem = (await duplicateListResponse.json()) as {
+    title: string;
+    traceId: string;
+  };
   expect(duplicateProblem.title).toBe('The name is already in use.');
   expect(duplicateProblem.traceId).toBeTruthy();
 
@@ -318,8 +470,10 @@ test('duplicate names are rejected in the UI and by the API', async ({ page, req
 async function createList(page: Page, name: string): Promise<TodoListResponse> {
   await page.getByLabel('Yeni liste adı').fill(name);
 
-  const responsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists` && response.request().method() === 'POST',
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists` &&
+      response.request().method() === 'POST',
   );
 
   await page.getByRole('button', { name: 'Liste oluştur' }).click();
@@ -339,9 +493,10 @@ async function createTodo(page: Page, listId: number, title: string): Promise<To
   await page.getByLabel('Görev adı').fill(title);
   await page.getByLabel('Açıklama').fill('Silme zincirini doğrulamak için oluşturuldu.');
 
-  const responsePromise = page.waitForResponse((response) =>
-    response.url() === `${apiUrl}/todo-lists/${listId}/todos` &&
-    response.request().method() === 'POST',
+  const responsePromise = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === `/api/todo-lists/${listId}/todos` &&
+      response.request().method() === 'POST',
   );
 
   await page.getByRole('button', { name: 'Görevi oluştur' }).click();

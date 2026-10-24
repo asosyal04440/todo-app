@@ -5,6 +5,7 @@ using Microsoft.IdentityModel.JsonWebTokens;
 using Microsoft.IdentityModel.Tokens;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Domain.Entities;
+using TodoApi.Infrastructure.Configuration;
 using TodoApi.Domain.Enums;
 using TodoApi.Infrastructure.Services.Authentication;
 
@@ -18,7 +19,7 @@ public class AuthenticationServiceTests
     public async Task JwtAccessTokenGenerator_CreatesASignedTokenWithTheUsersClaims()
     {
         DateTimeOffset now = new DateTimeOffset(2026, 10, 6, 12, 0, 0, TimeSpan.Zero);
-        JwtSettings settings = new JwtSettings("TodoApi", "TodoWeb", SigningKey, 60);
+        var settings = Options.Create(new JwtOptions { Issuer = "TodoApi", Audience = "TodoWeb", SigningKey = SigningKey, AccessTokenLifetimeMinutes = 60, RefreshTokenLifetimeDays = 7 });
         JwtAccessTokenGenerator generator = new JwtAccessTokenGenerator(settings, new FixedTimeProvider(now));
         User user = User.RegisterWithGoogle("ali@example.com", "Ali", "google-subject-1", UserRole.Admin);
 
@@ -46,7 +47,7 @@ public class AuthenticationServiceTests
     [Fact]
     public async Task JwtAccessTokenGenerator_TokenIsRejectedWhenSignedWithAnotherKey()
     {
-        JwtSettings settings = new JwtSettings("TodoApi", "TodoWeb", SigningKey, 60);
+        var settings = Options.Create(new JwtOptions { Issuer = "TodoApi", Audience = "TodoWeb", SigningKey = SigningKey, AccessTokenLifetimeMinutes = 60, RefreshTokenLifetimeDays = 7 });
         JwtAccessTokenGenerator generator = new JwtAccessTokenGenerator(settings, TimeProvider.System);
         User user = User.RegisterWithPassword("ali@example.com", "Ali", "hash-value");
 

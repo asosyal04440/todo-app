@@ -1,4 +1,6 @@
 using FluentValidation;
+using TodoApi.Domain.Common;
+using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Authentication.LoginWithPassword;
 
@@ -8,12 +10,12 @@ public sealed class LoginWithPasswordCommandValidator : AbstractValidator<LoginW
     {
         RuleFor(command => command.Email)
             .NotEmpty()
-            .MaximumLength(256)
+            .MaximumLength(User.MaximumEmailLength)
             .WithName("E-posta");
 
         RuleFor(command => command.Password)
             .NotEmpty()
-            .MaximumLength(128)
+            .MaximumLength(PasswordPolicy.MaximumLength)
             .WithName("Şifre");
     }
 }

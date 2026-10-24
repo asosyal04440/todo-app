@@ -14,6 +14,7 @@ const browserNodeExecutable = path.join(browserNodeDirectory, 'node.exe');
 const nodeExecutable = existsSync(browserNodeExecutable) ? browserNodeExecutable : process.execPath;
 const environment = {
   ...process.env,
+  TODO_E2E_PRODUCTION: String(process.argv.includes('--production')),
   ConnectionStrings__TodoDatabase: connectionString,
   Jwt__SigningKey: randomBytes(48).toString('base64'),
   Security__AuthenticationRequestsPerMinute: '1000',
@@ -72,7 +73,13 @@ try {
   const playwrightCli = path.join(webDirectory, 'node_modules', '@playwright', 'test', 'cli.js');
   const runTests = run(
     nodeExecutable,
-    [playwrightCli, 'test', '--config', 'e2e/playwright.config.ts', ...process.argv.slice(2)],
+    [
+      playwrightCli,
+      'test',
+      '--config',
+      'e2e/playwright.config.ts',
+      ...process.argv.slice(2).filter((argument) => argument !== '--production'),
+    ],
     webDirectory,
   );
 

@@ -6,7 +6,6 @@ import {
   registerUser,
   signInInBrowser,
   uniqueEmail,
-  useApiUrl,
 } from './fixtures';
 
 const test = base;
@@ -17,7 +16,6 @@ test('a visitor can register, stay signed in after a reload, log out, and log ba
   const email = uniqueEmail('ui');
   const password = 'UiSifre123';
 
-  await useApiUrl(page);
   await page.goto('/');
 
   await expect(page).toHaveURL(/\/login$/);
@@ -71,7 +69,6 @@ test('the login page explains a wrong password and a weak new password', async (
 }) => {
   const session = await registerUser(request, 'Yanlış Şifre Testi');
 
-  await useApiUrl(page);
   await page.goto('/login');
 
   await page.getByLabel('E-posta').fill(session.email);
@@ -122,7 +119,14 @@ test("a user cannot see or change another user's lists", async ({ page, playwrig
     expect(deleteAttempt.status()).toBe(404);
 
     const strangersLists = await strangerApi.get(`${apiUrl}/todo-lists`);
-    expect(await strangersLists.json()).toEqual([]);
+    expect(strangersLists.status()).toBe(200);
+    expect(await strangersLists.json()).toEqual({
+      items: [],
+      totalCount: 0,
+      pageNumber: 1,
+      pageSize: 20,
+      totalPages: 0,
+    });
 
     const adminAttempt = await strangerApi.get(`${apiUrl}/admin/users`);
     expect(adminAttempt.status()).toBe(403);
@@ -134,7 +138,9 @@ test("a user cannot see or change another user's lists", async ({ page, playwrig
     await signInInBrowser(page, stranger);
     await page.goto('/');
     await expect(page.locator('.account-name')).toHaveText('Yabancı');
-    await expect(page.locator('.muted-message').filter({ hasText: 'Henüz liste yok' })).toBeVisible();
+    await expect(
+      page.locator('.muted-message').filter({ hasText: 'Henüz liste yok' }),
+    ).toBeVisible();
     await expect(page.getByText(ownersList.name)).toHaveCount(0);
 
     await page.goto('/admin/users');

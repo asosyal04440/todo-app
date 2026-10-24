@@ -1,0 +1,42 @@
+E-posta ve şifre ile giriş
+
+1. login-page.html → (ngSubmit)="submit()".
+2. login-page.ts → submit() formu kontrol eder, this.auth.login(...) çağırır.
+3. auth.service.ts → login(...), /auth/login POST isteğini hazırlar.
+4. login-page.ts → signIn(...) içindeki firstValueFrom(request) isteği başlatır.
+5. apiErrorInterceptor → authInterceptor; gerekli başlık ve cookie ayarı eklenir.
+6. Program.cs → middleware’ler → RequireClientHeaderAttribute.OnActionExecuting(...).
+7. AuthController.cs → Login(...), _loginWithPasswordUseCase.ExecuteAsync(...) çağırır.
+8. Decorator sırası: LoggingDecorator → ExpectedErrorDecorator → ValidationDecorator.
+9. LoginWithPasswordUseCase.cs → HandleAsync(...) çalışır.
+10. _userRepository.GetByEmailAsync(...) → UserRepository kullanıcıyı getirir.
+11. _passwordHasher.VerifyPassword(...) → AspNetCorePasswordHasher şifreyi doğrular.
+12. _sessionIssuer.PrepareAsync(...) → refresh token ve hash’i hazırlanır.
+13. _unitOfWork.SaveChangesAsync(...) → değişiklikler veritabanına kaydedilir.
+14. _sessionIssuer.CreateSession(...) → JwtAccessTokenGenerator.GenerateToken(...) JWT üretir.
+15. Controller → RefreshTokenCookie.Write(...) + Ok(session.Result).
+16. Frontend → this.startSession(result) bilgileri belleğe alır.
+17. signIn(...) → this.router.navigate(['/']) ana sayfaya gider.
+
+
+Google ile giriş
+
+1. login-page.ts → setUpGoogleSignIn() → this.auth.getAuthConfig() Client ID’yi alır.
+2. renderGoogleButton(...) → this.googleIdentity.renderButton(...).
+3. google-identity.service.ts → loadScript() → Google butonu hazırlanır.
+4. Google doğrulaması sonrası callback’e response.credential yani ID token gelir.
+5. login-page.ts → this.auth.loginWithGoogle(idToken) çağrılır.
+6. auth.service.ts → loginWithGoogle(...), /auth/google POST isteğini hazırlar.
+7. signIn(...) → firstValueFrom(request) isteği başlatır.
+8. Interceptor’lar → API middleware’leri → OnActionExecuting(...).
+9. AuthController.cs → LoginWithGoogle(...) → _loginWithGoogleUseCase.ExecuteAsync(...).
+10. LoggingDecorator → ExpectedErrorDecorator → ValidationDecorator.
+11. LoginWithGoogleUseCase.cs → HandleAsync(...) çalışır.
+12. _googleTokenValidator.ValidateAsync(...) → GoogleIdTokenValidator Google token’ını doğrular.
+13. _userRepository.GetByGoogleSubjectIdAsync(...); bulunamazsa GetByEmailAsync(...).
+14. Hesap varsa user.LinkGoogleAccount(...); yoksa User.RegisterWithGoogle(...).
+15. _sessionIssuer.PrepareAsync(...) → refresh token hazırlanır.
+16. _unitOfWork.SaveChangesAsync(...) → değişiklikler kaydedilir.
+17. _sessionIssuer.CreateSession(...) → JwtAccessTokenGenerator.GenerateToken(...) bizim JWT’mizi üretir.
+18. Controller → RefreshTokenCookie.Write(...) + Ok(session.Result).
+19. Frontend → this.startSession(result) → this.router.navigate(['/']).

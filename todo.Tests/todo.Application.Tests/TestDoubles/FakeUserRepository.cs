@@ -1,15 +1,14 @@
 using System.Reflection;
 using TodoApi.Application.Abstractions.Persistence;
+using TodoApi.Application.Contracts;
 using TodoApi.Domain.Entities;
 
 namespace todo.Application.Tests.TestDoubles;
 
-public sealed class FakeUserRepository : IUserRepository
+public sealed class FakeUserRepository : IUserRepository, IUserReadQueries
 {
     private readonly List<User> _users = new List<User>();
     private int _nextUserId = 1;
-
-    public int SaveChangesCount { get; private set; }
 
     public IReadOnlyList<User> Users
     {
@@ -51,11 +50,11 @@ public sealed class FakeUserRepository : IUserRepository
         return Task.FromResult(user);
     }
 
-    public Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken)
+    public Task<PagedResult<UserDto>> GetUsersAsync(PageRequest page, CancellationToken cancellationToken)
     {
-        IReadOnlyList<User> results = _users.ToList();
-
-        return Task.FromResult(results);
+        var items = _users.OrderBy(user => user.Id).Skip(page.Offset).Take(page.PageSize)
+            .Select(user => new UserDto(user)).ToList();
+        return Task.FromResult(new PagedResult<UserDto>(items, _users.Count, page));
     }
 
     public Task AddAsync(User user, CancellationToken cancellationToken)
@@ -65,7 +64,7 @@ public sealed class FakeUserRepository : IUserRepository
         return Task.CompletedTask;
     }
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken)
+    public void ApplyChanges()
     {
         foreach (User user in _users)
         {
@@ -76,9 +75,6 @@ public sealed class FakeUserRepository : IUserRepository
             }
         }
 
-        SaveChangesCount++;
-
-        return Task.CompletedTask;
     }
 
     private static void SetId(User user, int value)

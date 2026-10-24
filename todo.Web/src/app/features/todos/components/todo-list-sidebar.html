@@ -1,0 +1,81 @@
+<aside class="sidebar">
+  <div class="brand">
+    <div>
+      <p class="brand-name">Todo</p>
+      <p class="brand-caption">Gününü düzenle</p>
+    </div>
+  </div>
+  <div class="sidebar-heading">
+    <span>Listelerim</span><span class="list-count">{{ totalCount }}</span>
+  </div>
+  <form [formGroup]="form" class="create-list-form" (ngSubmit)="submit()">
+    <input
+      nz-input
+      name="newListName"
+      formControlName="name"
+      placeholder="Yeni liste adı"
+      [maxlength]="validationLimits.todoListNameMaximumLength"
+      aria-label="Yeni liste adı"
+    />
+    <button
+      nz-button
+      nzType="primary"
+      type="submit"
+      [nzLoading]="saving"
+      aria-label="Liste oluştur"
+    >
+      +
+    </button>
+  </form>
+  <app-form-field-error
+    [control]="form.controls.name"
+    [messages]="{ required: 'Liste adı boş olamaz.' }"
+  />
+  <nav class="list-navigation" aria-label="Görev listeleri">
+    @if (loading && lists.length === 0) {
+      <p class="muted-message">Listeler yükleniyor…</p>
+    }
+    @for (list of lists; track list.id) {
+      <button
+        class="list-navigation-item"
+        [class.selected]="selectedId === list.id"
+        type="button"
+        [disabled]="busy"
+        (click)="selectRequested.emit(list)"
+      >
+        <span class="list-dot"></span><span class="list-name">{{ list.name }}</span>
+        @if (selectedId === list.id) {
+          <span class="selected-arrow">›</span>
+        }
+      </button>
+    }
+    @if (!loading && lists.length === 0) {
+      <p class="muted-message">Henüz liste yok. Yukarıdan ilk listeni oluştur.</p>
+    }
+  </nav>
+  @if (totalPages > 1) {
+    <nav class="pagination" aria-label="Liste sayfaları">
+      <button
+        nz-button
+        type="button"
+        [disabled]="busy || pageNumber <= 1"
+        (click)="pageRequested.emit(pageNumber - 1)"
+      >
+        Önceki
+      </button>
+      <span>{{ pageNumber }} / {{ totalPages }}</span>
+      <button
+        nz-button
+        type="button"
+        [disabled]="busy || pageNumber >= totalPages"
+        (click)="pageRequested.emit(pageNumber + 1)"
+      >
+        Sonraki
+      </button>
+    </nav>
+  }
+  <div class="sidebar-footer">
+    <span class="connection-dot" [class.offline]="!apiAvailable"></span><span>API</span>
+    <span class="connection-state">{{ apiAvailable ? 'bağlı' : 'bağlantı yok' }}</span>
+  </div>
+</aside>

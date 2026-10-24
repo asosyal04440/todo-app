@@ -67,9 +67,41 @@ public class DuplicateNameRuleTests
     [Theory]
     [InlineData("İstanbul", "istanbul", true)]
     [InlineData("Ilık", "ılık", true)]
+    [InlineData("I", "i", false)]
+    [InlineData("ISIK", "ışık", false)]
+    [InlineData("IŞIK", "ışık", true)]
+    [InlineData("İzmir", "izmir", true)]
+    [InlineData("Plan ", "plan", true)]
+    [InlineData("é", "e\u0301", true)]
+    [InlineData("ß", "ss", false)]
+    [InlineData("œ", "oe", false)]
+    [InlineData("ş", "s", false)]
     [InlineData("Ev", "Ev işleri", false)]
     public void NameComparison_FollowsTurkishCaseRules(string first, string second, bool expected)
     {
         Assert.Equal(expected, NameComparison.AreSame(first, second));
+    }
+
+    [Fact]
+    public void Rename_KeepsDisplayNamesAndLookupKeysTogether()
+    {
+        TodoList list = new TodoList("  Ev  ", 1);
+        TodoItem todo = list.AddTodo("  İş planı  ");
+        list.Rename("İzmir");
+        list.RenameTodo(todo, "ışık");
+
+        Assert.Equal("İzmir", list.Name);
+        Assert.Equal("İZMİR", list.NormalizedName);
+        Assert.Equal("ışık", todo.Title);
+        Assert.Equal("IŞIK", todo.NormalizedTitle);
+    }
+
+    [Fact]
+    public void AddTodo_RejectsCanonicallyEquivalentUnicodeTitles()
+    {
+        TodoList list = new TodoList("Ev", 1);
+        list.AddTodo("Café");
+
+        Assert.Throws<DuplicateNameException>(() => list.AddTodo("Cafe\u0301"));
     }
 }

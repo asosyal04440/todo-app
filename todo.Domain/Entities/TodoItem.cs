@@ -1,12 +1,15 @@
 using TodoApi.Domain.Enums;
+using TodoApi.Domain.Common;
 using TodoApi.Domain.Exceptions;
+using TodoApi.Domain.Specifications;
 
 namespace TodoApi.Domain.Entities;
 
-public class TodoItem
+public class TodoItem : AuditableEntity
 {
-    private const int MaximumTitleLength = 120;
-    private const int MaximumDescriptionLength = 1000;
+    public const int MaximumTitleLength = 120;
+    public const int MaximumNormalizedTitleLength = MaximumTitleLength * 3;
+    public const int MaximumDescriptionLength = 1000;
 
     private int _id;
     private int _todoListId;
@@ -14,7 +17,6 @@ public class TodoItem
     private string _title = string.Empty;
     private string? _description;
     private bool _isCompleted;
-    private DateTime _createdAtUtc;
     private DateTime? _dueAtUtc;
     private TodoPriority _priority = TodoPriority.Normal;
     private DateTime? _reminderSentAtUtc;
@@ -38,6 +40,7 @@ public class TodoItem
 
         string normalizedTitle = ValidateAndNormalizeTitle(title);
         Title = normalizedTitle;
+        NormalizedTitle = NameComparison.NormalizeForLookup(normalizedTitle);
 
         string? normalizedDescription = ValidateAndNormalizeDescription(description);
         Description = normalizedDescription;
@@ -50,7 +53,6 @@ public class TodoItem
 
         IsCompleted = false;
 
-        CreatedAtUtc = DateTime.UtcNow;
     }
 
     public int Id
@@ -64,6 +66,8 @@ public class TodoItem
             _id = value;
         }
     }
+
+    public string NormalizedTitle { get; private set; }
 
     public int TodoListId
     {
@@ -110,18 +114,6 @@ public class TodoItem
         private set
         {
             _isCompleted = value;
-        }
-    }
-
-    public DateTime CreatedAtUtc
-    {
-        get
-        {
-            return _createdAtUtc;
-        }
-        private set
-        {
-            _createdAtUtc = value;
         }
     }
 
@@ -188,7 +180,9 @@ public class TodoItem
     internal void Rename(string title)
     {
         string normalizedTitle = ValidateAndNormalizeTitle(title);
+        string titleKey = NameComparison.NormalizeForLookup(normalizedTitle);
         Title = normalizedTitle;
+        NormalizedTitle = titleKey;
     }
 
     public void ChangeDescription(string? description)
@@ -213,19 +207,7 @@ public class TodoItem
 
     public bool NeedsReminder(DateTime nowUtc, TimeSpan reminderLeadTime)
     {
-        if (IsCompleted || ReminderSentAtUtc.HasValue || DueAtUtc.HasValue == false)
-        {
-            return false;
-        }
-
-        DateTime dueAtUtc = DueAtUtc.Value;
-
-        if (dueAtUtc <= nowUtc)
-        {
-            return false;
-        }
-
-        return dueAtUtc - nowUtc <= reminderLeadTime;
+        return TodoReminderSpecification.NeedsReminder(this, nowUtc, reminderLeadTime);
     }
 
     public void MarkReminderSent(DateTime nowUtc)
@@ -241,17 +223,7 @@ public class TodoItem
 
     public bool CanRetryReminder(DateTime nowUtc, int maximumAttempts, TimeSpan retryDelay)
     {
-        if (ReminderAttemptCount >= maximumAttempts)
-        {
-            return false;
-        }
-
-        if (ReminderLastAttemptAtUtc.HasValue == false)
-        {
-            return true;
-        }
-
-        return nowUtc - ReminderLastAttemptAtUtc.Value >= retryDelay;
+        return TodoReminderSpecification.CanRetryReminder(this, nowUtc, maximumAttempts, retryDelay);
     }
 
     public void ChangePriority(TodoPriority priority)

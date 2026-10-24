@@ -1,0 +1,148 @@
+:host {
+  display: block;
+  min-height: 100vh;
+}
+
+.login-background {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 32px 16px;
+}
+
+.login-card {
+  width: 100%;
+  max-width: 400px;
+  padding: 36px 32px 32px;
+  background: #fff;
+  border: 1px solid #edf0ee;
+  border-radius: 22px;
+  box-shadow: 0 24px 80px rgb(38 62 51 / 9%);
+}
+
+.brand {
+  margin-bottom: 28px;
+  text-align: center;
+}
+
+.brand-name,
+.brand-caption,
+.error-message,
+.google-note {
+  margin: 0;
+}
+
+.brand-name {
+  color: #23352d;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.brand-caption {
+  margin-top: 2px;
+  color: #8a9790;
+  font-size: 13px;
+}
+
+.mode-switch {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px;
+  margin-bottom: 24px;
+  padding: 4px;
+  background: #f1f4f0;
+  border-radius: 12px;
+}
+
+.mode-switch button {
+  height: 38px;
+  color: #66736b;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+  border-radius: 9px;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease;
+}
+
+.mode-switch button.active {
+  color: #285b45;
+  background: #fff;
+  box-shadow: 0 1px 4px rgb(38 62 51 / 12%);
+}
+
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #536158;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.field-group small {
+  color: #8c9790;
+  font-weight: 400;
+}
+
+.error-message {
+  padding: 10px 12px;
+  color: #a23b2a;
+  font-size: 13px;
+  background: #fdf1ee;
+  border-radius: 10px;
+}
+
+.login-form button[type='submit'] {
+  height: 44px;
+  margin-top: 4px;
+  font-weight: 600;
+}
+
+.divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 24px 0;
+  color: #a1aaa4;
+  font-size: 12px;
+}
+
+.divider::before,
+.divider::after {
+  flex: 1;
+  height: 1px;
+  background: #edf0ee;
+  content: '';
+}
+
+.google-button {
+  display: flex;
+  justify-content: center;
+  min-height: 44px;
+}
+
+.google-note {
+  color: #8c9790;
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.google-note code {
+  font-size: 11px;
+}
+
+@media (max-width: 480px) {
+  .login-card {
+    padding: 28px 20px 24px;
+  }
+}

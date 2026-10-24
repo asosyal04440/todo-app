@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +15,7 @@ public sealed class GoogleIdTokenValidator : IGoogleTokenValidator
     private readonly ILogger<GoogleIdTokenValidator> _logger;
 
     public GoogleIdTokenValidator(
-        GoogleAuthenticationSettings googleSettings,
+        IOptions<GoogleAuthenticationOptions> googleSettings,
         ILogger<GoogleIdTokenValidator> logger)
     {
         if (googleSettings == null)
@@ -26,7 +28,7 @@ public sealed class GoogleIdTokenValidator : IGoogleTokenValidator
             throw new ArgumentNullException(nameof(logger));
         }
 
-        _googleSettings = googleSettings;
+        _googleSettings = googleSettings.Value.ToSettings();
         _logger = logger;
     }
 

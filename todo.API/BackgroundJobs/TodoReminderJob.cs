@@ -22,7 +22,10 @@ public sealed class TodoReminderJob
     [AutomaticRetry(Attempts = 3)]
     public async Task RunAsync(CancellationToken cancellationToken)
     {
-        ReminderRunResult result = await _sendDueTodoRemindersUseCase.ExecuteAsync(cancellationToken);
+        var outcome = await _sendDueTodoRemindersUseCase.ExecuteAsync(cancellationToken);
+        if (outcome.IsFailure)
+            throw new InvalidOperationException($"The reminder run was rejected: {outcome.Error!.Code}.");
+        ReminderRunResult result = outcome.Value;
 
         _logger.LogInformation(
             "Reminder run finished: {SentCount} sent, {FailedCount} failed, {CandidateCount} candidates.",

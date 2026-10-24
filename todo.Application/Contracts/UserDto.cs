@@ -30,6 +30,18 @@ public class UserDto
         _createdAtUtc = user.CreatedAtUtc;
     }
 
+    public UserDto(int id, string email, string displayName, UserRole role,
+        bool hasPassword, bool hasGoogleLogin, DateTime createdAtUtc)
+    {
+        _id = id;
+        _email = email;
+        _displayName = displayName;
+        _role = role;
+        _hasPassword = hasPassword;
+        _hasGoogleLogin = hasGoogleLogin;
+        _createdAtUtc = createdAtUtc;
+    }
+
     public int Id
     {
         get

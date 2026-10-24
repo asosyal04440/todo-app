@@ -3,20 +3,16 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using TodoApi.Domain.Entities;
+using TodoApi.Domain.Specifications;
 
 namespace TodoApi.Application.Abstractions.Persistence;
 
 public interface ITodoReminderRepository
 {
     Task<IReadOnlyList<TodoReminderCandidate>> GetTodosDueForReminderAsync(
-        DateTime nowUtc,
-        DateTime dueBeforeUtc,
-        DateTime lastFailedAttemptBeforeUtc,
-        int maximumAttempts,
+        TodoReminderSpecification specification,
         int maxCount,
         CancellationToken cancellationToken);
-
-    Task SaveChangesAsync(CancellationToken cancellationToken);
 }
 
 public sealed class TodoReminderCandidate

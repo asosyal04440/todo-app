@@ -1,0 +1,45 @@
+<article class="todo-card" [class.todo-completed]="todo.isCompleted">
+  @if (editing) {
+    <app-todo-form
+      [todo]="todo"
+      [saving]="saving"
+      [apiError]="apiError"
+      (cancelled)="editCancelled.emit()"
+      (submitted)="updateRequested.emit({ todo, request: $event })"
+    />
+  } @else {
+    <div class="todo-card-main">
+      <label class="completion-control" [attr.aria-label]="todo.title + ' tamamlandı'">
+        <input type="checkbox" [checked]="todo.isCompleted" (change)="changeCompletion($event)" />
+        <span class="custom-checkbox"></span>
+      </label>
+      <div class="todo-copy">
+        <h3>{{ todo.title }}</h3>
+        @if (todo.description) {
+          <p>{{ todo.description }}</p>
+        }
+        <div class="todo-metadata">
+          <nz-tag [nzColor]="priorityColor(todo.priority)"
+            >{{ priorityLabel(todo.priority) }} öncelik</nz-tag
+          >
+          @if (todo.dueAtUtc) {
+            <span class="due-date">Bitiş: {{ todo.dueAtUtc | date: 'dd.MM.yyyy HH:mm' }}</span>
+          }
+        </div>
+      </div>
+    </div>
+    <div class="todo-actions">
+      <button nz-button type="button" (click)="editRequested.emit(todo)">Düzenle</button>
+      <button
+        nz-button
+        nzDanger
+        nz-popconfirm
+        nzPopconfirmTitle="Bu görev silinsin mi?"
+        (nzOnConfirm)="deleteRequested.emit(todo)"
+        type="button"
+      >
+        Sil
+      </button>
+    </div>
+  }
+</article>

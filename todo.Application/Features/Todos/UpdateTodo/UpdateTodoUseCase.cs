@@ -1,28 +1,32 @@
-using FluentValidation;
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
+using TodoApi.Application.Common.Validation;
 using FluentValidation.Results;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Application.Authorization;
-using TodoApi.Application.Common.Validation;
 using TodoApi.Application.Contracts;
 using TodoApi.Application.Exceptions;
 using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Todos.UpdateTodo;
 
-public class UpdateTodoUseCase
+public class UpdateTodoUseCase : UseCase<UpdateTodoCommand, TodoItemDto>
 {
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITodoListRepository _todoListRepository;
     private readonly ICurrentUser _currentUser;
-    private readonly IValidator<UpdateTodoCommand> _validator;
     private readonly TimeProvider _timeProvider;
 
     public UpdateTodoUseCase(
+        IUnitOfWork unitOfWork,
         ITodoListRepository todoListRepository,
         ICurrentUser currentUser,
-        IValidator<UpdateTodoCommand> validator,
-        TimeProvider timeProvider)
+        UseCasePipeline<UpdateTodoCommand, TodoItemDto> pipeline,
+        TimeProvider timeProvider) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (todoListRepository == null)
         {
             throw new ArgumentNullException(nameof(todoListRepository));
@@ -33,42 +37,34 @@ public class UpdateTodoUseCase
             throw new ArgumentNullException(nameof(currentUser));
         }
 
-        if (validator == null)
-        {
-            throw new ArgumentNullException(nameof(validator));
-        }
-
         if (timeProvider == null)
         {
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
+        _unitOfWork = unitOfWork;
         _todoListRepository = todoListRepository;
         _currentUser = currentUser;
-        _validator = validator;
         _timeProvider = timeProvider;
     }
 
-    public async Task<TodoItemDto?> ExecuteAsync(
-        UpdateTodoCommand command,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<TodoItemDto>> HandleAsync(
+        UpdateTodoCommand command, CancellationToken cancellationToken)
     {
-        await _validator.ValidateOrThrowAsync(command, cancellationToken);
-
         TodoList? todoList = await _todoListRepository.GetByIdWithTodosAsync(
             command.TodoListId,
             cancellationToken);
 
         if (todoList == null)
         {
-            return null;
+            return Result<TodoItemDto>.Failure(AppErrors.ListNotFound);
         }
 
         bool canAccessTodoList = TodoListAccessPolicy.CanAccess(todoList, _currentUser);
 
         if (canAccessTodoList == false)
         {
-            return null;
+            return Result<TodoItemDto>.Failure(AppErrors.AccessDenied);
         }
 
         TodoItem? todoToUpdate = null;
@@ -84,7 +80,7 @@ public class UpdateTodoUseCase
 
         if (todoToUpdate == null)
         {
-            return null;
+            return Result<TodoItemDto>.Failure(AppErrors.TodoNotFound);
         }
 
         EnsureAChangedDueDateIsNotInThePast(todoToUpdate, command.DueAtUtc);
@@ -94,11 +90,11 @@ public class UpdateTodoUseCase
         todoToUpdate.SetDueAtUtc(command.DueAtUtc);
         todoToUpdate.ChangePriority(command.Priority);
 
-        await _todoListRepository.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         TodoItemDto response = new TodoItemDto(todoToUpdate);
 
-        return response;
+        return Result<TodoItemDto>.Success(response);
     }
 
     private void EnsureAChangedDueDateIsNotInThePast(TodoItem todo, DateTime? requestedDueAtUtc)

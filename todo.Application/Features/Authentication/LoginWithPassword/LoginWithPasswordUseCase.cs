@@ -1,31 +1,33 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using FluentValidation;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
-using TodoApi.Application.Common.Validation;
-using TodoApi.Application.Exceptions;
 using TodoApi.Application.Features.Authentication.Common;
+using TodoApi.Domain.Common;
 using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Authentication.LoginWithPassword;
 
-public class LoginWithPasswordUseCase
+public class LoginWithPasswordUseCase : UseCase<LoginWithPasswordCommand, AuthSession>
 {
-    private const string InvalidCredentialsMessage = "The email address or password is incorrect.";
+    private readonly IUnitOfWork _unitOfWork;
 
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly SessionIssuer _sessionIssuer;
-    private readonly IValidator<LoginWithPasswordCommand> _validator;
 
     public LoginWithPasswordUseCase(
+        IUnitOfWork unitOfWork,
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         SessionIssuer sessionIssuer,
-        IValidator<LoginWithPasswordCommand> validator)
+        UseCasePipeline<LoginWithPasswordCommand, AuthSession> pipeline) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (userRepository == null)
         {
             throw new ArgumentNullException(nameof(userRepository));
@@ -41,23 +43,15 @@ public class LoginWithPasswordUseCase
             throw new ArgumentNullException(nameof(sessionIssuer));
         }
 
-        if (validator == null)
-        {
-            throw new ArgumentNullException(nameof(validator));
-        }
-
+        _unitOfWork = unitOfWork;
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _sessionIssuer = sessionIssuer;
-        _validator = validator;
     }
 
-    public async Task<AuthSession> ExecuteAsync(
-        LoginWithPasswordCommand command,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<AuthSession>> HandleAsync(
+        LoginWithPasswordCommand command, CancellationToken cancellationToken)
     {
-        await _validator.ValidateOrThrowAsync(command, cancellationToken);
-
         string normalizedEmail = EmailNormalizer.Normalize(command.Email);
         string providedPassword = command.Password;
 
@@ -67,7 +61,7 @@ public class LoginWithPasswordUseCase
         {
             _passwordHasher.HashPassword(providedPassword);
 
-            throw new AuthenticationFailedException(InvalidCredentialsMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidCredentials);
         }
 
         PasswordVerificationOutcome outcome = _passwordHasher.VerifyPassword(
@@ -76,7 +70,7 @@ public class LoginWithPasswordUseCase
 
         if (outcome == PasswordVerificationOutcome.Failed)
         {
-            throw new AuthenticationFailedException(InvalidCredentialsMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidCredentials);
         }
 
         if (outcome == PasswordVerificationOutcome.SucceededRehashNeeded)
@@ -84,10 +78,10 @@ public class LoginWithPasswordUseCase
             user.ReplacePasswordHash(_passwordHasher.HashPassword(providedPassword));
         }
 
-        await _userRepository.SaveChangesAsync(cancellationToken);
+        PendingAuthSession session = await _sessionIssuer.PrepareAsync(user, cancellationToken);
 
-        AuthSession session = await _sessionIssuer.IssueAsync(user, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return session;
+        return Result<AuthSession>.Success(_sessionIssuer.CreateSession(session));
     }
 }

@@ -1,13 +1,14 @@
+using TodoApi.Domain.Common;
 using TodoApi.Domain.Enums;
 using TodoApi.Domain.Exceptions;
 
 namespace TodoApi.Domain.Entities;
 
-public class User
+public class User : AuditableEntity
 {
-    private const int MaximumEmailLength = 256;
-    private const int MaximumDisplayNameLength = 100;
-    private const int MaximumGoogleSubjectIdLength = 255;
+    public const int MaximumEmailLength = 256;
+    public const int MaximumDisplayNameLength = 100;
+    public const int MaximumGoogleSubjectIdLength = 255;
 
     private int _id;
     private string _email = string.Empty;
@@ -15,14 +16,12 @@ public class User
     private string? _passwordHash;
     private string? _googleSubjectId;
     private UserRole _role = UserRole.User;
-    private DateTime _createdAtUtc;
 
     private User(string email, string displayName, UserRole role)
     {
         Email = ValidateAndNormalizeEmail(email);
         DisplayName = ValidateAndNormalizeDisplayName(displayName);
         Role = ValidateRole(role);
-        CreatedAtUtc = DateTime.UtcNow;
     }
 
     public int Id
@@ -94,18 +93,6 @@ public class User
         private set
         {
             _role = value;
-        }
-    }
-
-    public DateTime CreatedAtUtc
-    {
-        get
-        {
-            return _createdAtUtc;
-        }
-        private set
-        {
-            _createdAtUtc = value;
         }
     }
 
@@ -205,7 +192,7 @@ public class User
                 "An email address cannot be empty.");
         }
 
-        string normalizedEmail = email.Trim().ToLowerInvariant();
+        string normalizedEmail = EmailNormalizer.Normalize(email);
 
         if (normalizedEmail.Length > MaximumEmailLength)
         {

@@ -1,6 +1,5 @@
 using System;
 using System.Text;
-using Microsoft.Extensions.Configuration;
 
 namespace TodoApi.Infrastructure.Services.Authentication;
 
@@ -87,32 +86,5 @@ public sealed class JwtSettings
         {
             return _accessTokenLifetimeMinutes;
         }
-    }
-
-    public static JwtSettings FromConfiguration(IConfiguration configuration)
-    {
-        if (configuration == null)
-        {
-            throw new ArgumentNullException(nameof(configuration));
-        }
-
-        IConfigurationSection section = configuration.GetSection(SectionName);
-
-        string lifetimeText = section["AccessTokenLifetimeMinutes"] ?? string.Empty;
-        bool lifetimeIsNumber = int.TryParse(lifetimeText, out int accessTokenLifetimeMinutes);
-
-        if (lifetimeIsNumber == false)
-        {
-            throw new InvalidOperationException(
-                "The Jwt:AccessTokenLifetimeMinutes setting must be a whole number.");
-        }
-
-        JwtSettings settings = new JwtSettings(
-            section["Issuer"] ?? string.Empty,
-            section["Audience"] ?? string.Empty,
-            section["SigningKey"] ?? string.Empty,
-            accessTokenLifetimeMinutes);
-
-        return settings;
     }
 }

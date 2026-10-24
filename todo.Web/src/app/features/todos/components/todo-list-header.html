@@ -1,0 +1,43 @@
+<section class="list-header-card">
+  @if (renaming) {
+    <form [formGroup]="form" class="rename-list-form" (ngSubmit)="submit()">
+      <input
+        nz-input
+        name="renamedListName"
+        formControlName="name"
+        [maxlength]="validationLimits.todoListNameMaximumLength"
+        aria-label="Liste adı"
+      />
+      <button nz-button nzType="primary" type="submit" [nzLoading]="saving">Kaydet</button>
+      <button nz-button type="button" (click)="renameCancelled.emit()">Vazgeç</button>
+      <app-form-field-error
+        [control]="form.controls.name"
+        [messages]="{ required: 'Liste adı boş olamaz.' }"
+      />
+    </form>
+  } @else {
+    <div class="list-title-block">
+      <p class="eyebrow">SEÇİLİ LİSTE</p>
+      <h2>{{ list.name }}</h2>
+      <p class="list-subtitle">
+        {{ totalCount }} görev
+        @if (todos().length > 0) {
+          <span>·</span> Bu sayfada {{ completedCount() }} tamamlandı
+        }
+      </p>
+    </div>
+    <div class="list-actions">
+      <button nz-button type="button" (click)="renameStarted.emit()">Yeniden adlandır</button>
+      <button
+        nz-button
+        nzDanger
+        nz-popconfirm
+        nzPopconfirmTitle="Bu liste ve içindeki bütün görevler silinsin mi?"
+        (nzOnConfirm)="deleteRequested.emit()"
+        type="button"
+      >
+        Listeyi sil
+      </button>
+    </div>
+  }
+</section>

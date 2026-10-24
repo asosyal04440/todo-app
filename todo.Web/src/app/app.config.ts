@@ -11,15 +11,16 @@ import {
 import { provideRouter } from '@angular/router';
 import { provideNzI18n, tr_TR } from 'ng-zorro-antd/i18n';
 import { routes } from './app.routes';
-import { authInterceptor } from './interceptors/auth.interceptor';
-import { AuthService } from './services/auth.service';
+import { authInterceptor } from './core/http/auth.interceptor';
+import { apiErrorInterceptor } from './core/http/api-error.interceptor';
+import { AuthService } from './core/auth/auth.service';
 
 registerLocaleData(tr);
 
 export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
-    provideHttpClient(withInterceptors([authInterceptor])),
+    provideHttpClient(withInterceptors([apiErrorInterceptor, authInterceptor])),
     provideRouter(routes),
     provideAppInitializer(() => inject(AuthService).restoreSession()),
     provideNzI18n(tr_TR),

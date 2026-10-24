@@ -1,0 +1,22 @@
+<header class="top-bar">
+  <div>
+    <p class="eyebrow">KİŞİSEL PLANLAYICIN</p>
+    <h1>Görevlerin</h1>
+  </div>
+  <div class="top-bar-actions">
+    @if (showCreate) {
+      <button nz-button nzType="primary" type="button" (click)="createRequested.emit()">
+        + Yeni görev
+      </button>
+    }
+    @if (user; as account) {
+      <div class="account-menu">
+        <span class="account-name" [title]="account.email">{{ account.displayName }}</span>
+        @if (isAdmin) {
+          <a nz-button nzType="link" routerLink="/admin/users">Kullanıcılar</a>
+        }
+        <button nz-button type="button" (click)="logoutRequested.emit()">Çıkış yap</button>
+      </div>
+    }
+  </div>
+</header>

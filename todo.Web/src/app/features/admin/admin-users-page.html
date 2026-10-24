@@ -1,0 +1,72 @@
+<div class="admin-background">
+  <main class="admin-card">
+    <header class="admin-header">
+      <div>
+        <p class="eyebrow">YÖNETİM</p>
+        <h1>Kullanıcılar</h1>
+      </div>
+      <a nz-button routerLink="/">← Görevlerime dön</a>
+    </header>
+
+    @if (isLoading()) {
+      <p class="muted-message">Kullanıcılar yükleniyor…</p>
+    } @else if (error(); as problem) {
+      <app-api-errors [error]="problem" />
+    } @else {
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Ad</th>
+              <th scope="col">E-posta</th>
+              <th scope="col">Rol</th>
+              <th scope="col">Giriş yöntemi</th>
+              <th scope="col">Kayıt tarihi</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (user of users(); track user.id) {
+              <tr [class.current-user]="user.id === auth.currentUser()?.id">
+                <td>{{ user.displayName }}</td>
+                <td>{{ user.email }}</td>
+                <td>
+                  <nz-tag [nzColor]="user.role === 'Admin' ? 'purple' : 'default'">
+                    {{ user.role === 'Admin' ? 'Admin' : 'Kullanıcı' }}
+                  </nz-tag>
+                </td>
+                <td>
+                  @if (user.hasPassword) {
+                    <nz-tag>Şifre</nz-tag>
+                  }
+                  @if (user.hasGoogleLogin) {
+                    <nz-tag nzColor="blue">Google</nz-tag>
+                  }
+                </td>
+                <td>{{ user.createdAtUtc | date: 'dd.MM.yyyy HH:mm' }}</td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+      <nav class="pagination" aria-label="Kullanıcı sayfaları">
+        <button
+          nz-button
+          type="button"
+          [disabled]="isLoading() || pageNumber() <= 1"
+          (click)="changePage(pageNumber() - 1)"
+        >
+          Önceki
+        </button>
+        <span>{{ pageNumber() }} / {{ totalPages() || 1 }} · {{ totalCount() }} kullanıcı</span>
+        <button
+          nz-button
+          type="button"
+          [disabled]="isLoading() || pageNumber() >= totalPages()"
+          (click)="changePage(pageNumber() + 1)"
+        >
+          Sonraki
+        </button>
+      </nav>
+    }
+  </main>
+</div>

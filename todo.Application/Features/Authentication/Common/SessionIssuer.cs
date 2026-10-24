@@ -55,7 +55,7 @@ public class SessionIssuer
         _timeProvider = timeProvider;
     }
 
-    public async Task<AuthSession> IssueAsync(
+    public async Task<PendingAuthSession> PrepareAsync(
         User user,
         CancellationToken cancellationToken,
         RefreshToken? replacedToken = null)
@@ -72,7 +72,7 @@ public class SessionIssuer
         string refreshTokenHash = _secureTokenGenerator.ComputeHash(refreshTokenValue);
 
         RefreshToken refreshToken = new RefreshToken(
-            user.Id,
+            user,
             refreshTokenHash,
             nowUtc,
             refreshTokenExpiresAtUtc);
@@ -83,12 +83,28 @@ public class SessionIssuer
         }
 
         await _refreshTokenRepository.AddAsync(refreshToken, cancellationToken);
-        await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
+
+        return new PendingAuthSession(user, refreshToken, refreshTokenValue);
+    }
+
+    public AuthSession CreateSession(PendingAuthSession pendingSession)
+    {
+        ArgumentNullException.ThrowIfNull(pendingSession);
+
+        if (pendingSession.User.Id <= 0 || pendingSession.Token.Id <= 0)
+        {
+            throw new InvalidOperationException("The session must be saved before creating its response.");
+        }
+
+        User user = pendingSession.User;
 
         AccessToken accessToken = _accessTokenGenerator.GenerateToken(user);
         AuthResultDto result = new AuthResultDto(accessToken, new UserDto(user));
 
-        AuthSession session = new AuthSession(result, refreshTokenValue, refreshTokenExpiresAtUtc);
+        AuthSession session = new AuthSession(
+            result,
+            pendingSession.TokenValue,
+            pendingSession.Token.ExpiresAtUtc);
 
         return session;
     }

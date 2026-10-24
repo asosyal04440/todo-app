@@ -13,9 +13,5 @@ public interface IUserRepository
 
     Task<User?> GetByGoogleSubjectIdAsync(string googleSubjectId, CancellationToken cancellationToken);
 
-    Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken);
-
     Task AddAsync(User user, CancellationToken cancellationToken);
-
-    Task SaveChangesAsync(CancellationToken cancellationToken);
 }

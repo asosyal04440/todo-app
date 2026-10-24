@@ -1,6 +1,8 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using TodoApi.Application.Abstractions.Authentication;
@@ -47,22 +49,15 @@ public static class DependencyInjection
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
         services.AddScoped<ITodoReminderRepository, TodoReminderRepository>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
+        services.AddScoped<ITodoReadQueries, TodoReadQueries>();
+        services.AddScoped<IUserReadQueries, UserReadQueries>();
 
-        JwtSettings jwtSettings = JwtSettings.FromConfiguration(configuration);
-        GoogleAuthenticationSettings googleSettings =
-            GoogleAuthenticationSettings.FromConfiguration(configuration);
-        ConfiguredRoleAssignmentPolicy roleAssignmentPolicy =
-            ConfiguredRoleAssignmentPolicy.FromConfiguration(configuration);
-        RefreshTokenSettings refreshTokenSettings = ReadRefreshTokenSettings(configuration);
-        SmtpSettings smtpSettings = SmtpSettings.FromConfiguration(configuration);
-        ReminderSettings reminderSettings = ReadReminderSettings(configuration);
-
-        services.AddSingleton(jwtSettings);
-        services.AddSingleton(googleSettings);
-        services.AddSingleton<IRoleAssignmentPolicy>(roleAssignmentPolicy);
-        services.AddSingleton(refreshTokenSettings);
-        services.AddSingleton(smtpSettings);
-        services.AddSingleton(reminderSettings);
+        services.AddTodoOptions(configuration);
+        services.AddSingleton<IRoleAssignmentPolicy>(provider => new ConfiguredRoleAssignmentPolicy(
+            provider.GetRequiredService<IOptions<AuthorizationOptions>>().Value.AdminEmails));
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<JwtOptions>>().Value.ToRefreshTokenSettings());
+        services.AddSingleton(provider => provider.GetRequiredService<IOptions<ReminderOptions>>().Value.ToSettings());
         services.TryAddSingleton(TimeProvider.System);
 
         services.AddSingleton<IPasswordHasher, AspNetCorePasswordHasher>();
@@ -72,88 +67,5 @@ public static class DependencyInjection
         services.AddSingleton<IEmailSender, MailKitEmailSender>();
 
         return services;
-    }
-
-    private static RefreshTokenSettings ReadRefreshTokenSettings(IConfiguration configuration)
-    {
-        string lifetimeText = configuration["Jwt:RefreshTokenLifetimeDays"] ?? string.Empty;
-        bool lifetimeIsNumber = int.TryParse(lifetimeText, out int lifetimeDays);
-
-        if (lifetimeIsNumber == false || lifetimeDays <= 0)
-        {
-            throw new InvalidOperationException(
-                "The Jwt:RefreshTokenLifetimeDays setting must be a positive whole number.");
-        }
-
-        return new RefreshTokenSettings(TimeSpan.FromDays(lifetimeDays));
-    }
-
-    private static ReminderSettings ReadReminderSettings(IConfiguration configuration)
-    {
-        IConfigurationSection section = configuration.GetSection("Reminders");
-
-        bool isEnabled = ReadBoolean(section, "Enabled", defaultValue: true);
-        int leadTimeHours = ReadPositiveInteger(section, "LeadTimeHours", defaultValue: 24);
-        string schedule = section["Schedule"] ?? "*/5 * * * *";
-        int batchSize = ReadPositiveInteger(section, "BatchSize", defaultValue: 50);
-        string timeZoneId = section["DisplayTimeZone"] ?? "Europe/Istanbul";
-        int maximumAttempts = ReadPositiveInteger(section, "MaximumAttempts", defaultValue: 3);
-        int retryDelayMinutes = ReadPositiveInteger(section, "RetryDelayMinutes", defaultValue: 15);
-
-        TimeZoneInfo displayTimeZone;
-
-        try
-        {
-            displayTimeZone = TimeZoneInfo.FindSystemTimeZoneById(timeZoneId);
-        }
-        catch (TimeZoneNotFoundException exception)
-        {
-            throw new InvalidOperationException(
-                $"The Reminders:DisplayTimeZone setting '{timeZoneId}' is not a known time zone.",
-                exception);
-        }
-
-        return new ReminderSettings(
-            isEnabled,
-            TimeSpan.FromHours(leadTimeHours),
-            schedule,
-            batchSize,
-            displayTimeZone,
-            maximumAttempts,
-            TimeSpan.FromMinutes(retryDelayMinutes));
-    }
-
-    private static bool ReadBoolean(IConfigurationSection section, string key, bool defaultValue)
-    {
-        string? value = section[key];
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return defaultValue;
-        }
-
-        if (bool.TryParse(value, out bool result) == false)
-        {
-            throw new InvalidOperationException($"The {section.Path}:{key} setting must be true or false.");
-        }
-
-        return result;
-    }
-
-    private static int ReadPositiveInteger(IConfigurationSection section, string key, int defaultValue)
-    {
-        string? value = section[key];
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return defaultValue;
-        }
-
-        if (int.TryParse(value, out int result) == false || result <= 0)
-        {
-            throw new InvalidOperationException($"The {section.Path}:{key} setting must be a positive whole number.");
-        }
-
-        return result;
     }
 }

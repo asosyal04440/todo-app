@@ -1,54 +1,23 @@
 using Microsoft.AspNetCore.Diagnostics;
-using Microsoft.AspNetCore.Mvc;
+using TodoApi.API.Models.Responses;
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Exceptions;
 
 namespace TodoApi.API.ExceptionHandling;
 
-public sealed class ApplicationExceptionHandler : IExceptionHandler
+public sealed class ApplicationExceptionHandler(ILogger<ApplicationExceptionHandler> logger) : IExceptionHandler
 {
-    private readonly ILogger<ApplicationExceptionHandler> _logger;
-
-    public ApplicationExceptionHandler(ILogger<ApplicationExceptionHandler> logger)
+    public async ValueTask<bool> TryHandleAsync(HttpContext context, Exception exception, CancellationToken cancellationToken)
     {
-        _logger = logger;
-    }
-
-    public async ValueTask<bool> TryHandleAsync(
-        HttpContext httpContext,
-        Exception exception,
-        CancellationToken cancellationToken)
-    {
-        int statusCode;
-        string title;
-
-        if (exception is AuthenticationFailedException)
+        AppError? error = exception switch
         {
-            statusCode = StatusCodes.Status401Unauthorized;
-            title = "Authentication failed.";
-
-            _logger.LogWarning("Authentication failed for {RequestPath}.", httpContext.Request.Path);
-        }
-        else if (exception is EmailAlreadyRegisteredException)
-        {
-            statusCode = StatusCodes.Status409Conflict;
-            title = "The email address is already registered.";
-
-            _logger.LogInformation("Registration rejected because the email address is already in use.");
-        }
-        else
-        {
-            return false;
-        }
-
-        ProblemDetails problemDetails = new ProblemDetails
-        {
-            Status = statusCode,
-            Title = title,
-            Detail = exception.Message
+            AuthenticationFailedException authentication => AppErrors.Authentication(authentication.Message),
+            EmailAlreadyRegisteredException => AppErrors.EmailAlreadyRegistered,
+            _ => null
         };
-
-        await ProblemDetailsWriter.WriteAsync(httpContext, problemDetails, cancellationToken);
-
+        if (error == null) return false;
+        logger.LogInformation("Application request rejected {RequestPath}: {ErrorCode}", context.Request.Path, error.Code);
+        await ProblemDetailsWriter.WriteAsync(context, ResultHttpMapping.CreateProblem(error), cancellationToken);
         return true;
     }
 }

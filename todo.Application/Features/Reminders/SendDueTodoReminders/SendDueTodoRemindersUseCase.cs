@@ -1,3 +1,5 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Collections.Generic;
 using System.Threading;
@@ -5,22 +7,28 @@ using System.Threading.Tasks;
 using TodoApi.Application.Abstractions.Email;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Domain.Entities;
+using TodoApi.Domain.Specifications;
 
 namespace TodoApi.Application.Features.Reminders.SendDueTodoReminders;
 
-public class SendDueTodoRemindersUseCase
+public class SendDueTodoRemindersUseCase : UseCase<EmptyRequest, ReminderRunResult>
 {
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITodoReminderRepository _todoReminderRepository;
     private readonly IEmailSender _emailSender;
     private readonly ReminderSettings _reminderSettings;
     private readonly TimeProvider _timeProvider;
 
     public SendDueTodoRemindersUseCase(
+        IUnitOfWork unitOfWork,
         ITodoReminderRepository todoReminderRepository,
         IEmailSender emailSender,
         ReminderSettings reminderSettings,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        UseCasePipeline<EmptyRequest, ReminderRunResult> pipeline) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (todoReminderRepository == null)
         {
             throw new ArgumentNullException(nameof(todoReminderRepository));
@@ -41,24 +49,29 @@ public class SendDueTodoRemindersUseCase
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
+        _unitOfWork = unitOfWork;
         _todoReminderRepository = todoReminderRepository;
         _emailSender = emailSender;
         _reminderSettings = reminderSettings;
         _timeProvider = timeProvider;
     }
 
-    public async Task<ReminderRunResult> ExecuteAsync(CancellationToken cancellationToken = default)
+    public Task<Result<ReminderRunResult>> ExecuteAsync(CancellationToken cancellationToken = default) =>
+        base.ExecuteAsync(default, cancellationToken);
+
+    protected override async Task<Result<ReminderRunResult>> HandleAsync(
+        EmptyRequest request, CancellationToken cancellationToken)
     {
         DateTime nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
-        DateTime dueBeforeUtc = nowUtc.Add(_reminderSettings.LeadTime);
-        DateTime lastFailedAttemptBeforeUtc = nowUtc.Subtract(_reminderSettings.RetryDelay);
+        var specification = new TodoReminderSpecification(
+            nowUtc,
+            _reminderSettings.LeadTime,
+            _reminderSettings.MaximumAttempts,
+            _reminderSettings.RetryDelay);
 
         IReadOnlyList<TodoReminderCandidate> candidates =
             await _todoReminderRepository.GetTodosDueForReminderAsync(
-                nowUtc,
-                dueBeforeUtc,
-                lastFailedAttemptBeforeUtc,
-                _reminderSettings.MaximumAttempts,
+                specification,
                 _reminderSettings.BatchSize,
                 cancellationToken);
 
@@ -71,10 +84,7 @@ public class SendDueTodoRemindersUseCase
             cancellationToken.ThrowIfCancellationRequested();
 
             TodoItem todo = candidate.Todo;
-            bool needsReminder = todo.NeedsReminder(nowUtc, _reminderSettings.LeadTime);
-            bool canRetry = todo.CanRetryReminder(nowUtc, _reminderSettings.MaximumAttempts, _reminderSettings.RetryDelay);
-
-            if (needsReminder == false || canRetry == false)
+            if (specification.IsSatisfiedBy(todo) == false)
             {
                 continue;
             }
@@ -96,7 +106,7 @@ public class SendDueTodoRemindersUseCase
             catch (Exception exception) when (exception is not OperationCanceledException)
             {
                 todo.RecordFailedReminderAttempt(_timeProvider.GetUtcNow().UtcDateTime);
-                await _todoReminderRepository.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
 
                 bool willBeRetried = todo.ReminderAttemptCount < _reminderSettings.MaximumAttempts;
                 failures.Add(new ReminderFailure(todo.Id, candidate.OwnerUserId, exception, willBeRetried));
@@ -104,10 +114,10 @@ public class SendDueTodoRemindersUseCase
             }
 
             todo.MarkReminderSent(_timeProvider.GetUtcNow().UtcDateTime);
-            await _todoReminderRepository.SaveChangesAsync(cancellationToken);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
             sentCount++;
         }
 
-        return new ReminderRunResult(candidates.Count, sentCount, failures, emailServiceUnavailable);
+        return Result<ReminderRunResult>.Success(new ReminderRunResult(candidates.Count, sentCount, failures, emailServiceUnavailable));
     }
 }

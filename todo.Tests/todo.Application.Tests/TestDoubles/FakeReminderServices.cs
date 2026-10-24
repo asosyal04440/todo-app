@@ -1,5 +1,6 @@
 using TodoApi.Application.Abstractions.Email;
 using TodoApi.Application.Abstractions.Persistence;
+using TodoApi.Domain.Specifications;
 
 namespace todo.Application.Tests.TestDoubles;
 
@@ -60,36 +61,19 @@ public sealed class FakeTodoReminderRepository : ITodoReminderRepository
 {
     public List<TodoReminderCandidate> Candidates { get; } = new List<TodoReminderCandidate>();
 
-    public int SaveChangesCount { get; private set; }
+    public FakeUnitOfWork UnitOfWork { get; } = new FakeUnitOfWork();
 
     public Task<IReadOnlyList<TodoReminderCandidate>> GetTodosDueForReminderAsync(
-        DateTime nowUtc,
-        DateTime dueBeforeUtc,
-        DateTime lastFailedAttemptBeforeUtc,
-        int maximumAttempts,
+        TodoReminderSpecification specification,
         int maxCount,
         CancellationToken cancellationToken)
     {
         IReadOnlyList<TodoReminderCandidate> results = Candidates
-            .Where(candidate =>
-                candidate.Todo.IsCompleted == false &&
-                candidate.Todo.ReminderSentAtUtc == null &&
-                candidate.Todo.DueAtUtc > nowUtc &&
-                candidate.Todo.DueAtUtc <= dueBeforeUtc &&
-                candidate.Todo.ReminderAttemptCount < maximumAttempts &&
-                (candidate.Todo.ReminderLastAttemptAtUtc == null ||
-                 candidate.Todo.ReminderLastAttemptAtUtc <= lastFailedAttemptBeforeUtc))
+            .Where(candidate => specification.IsSatisfiedBy(candidate.Todo))
             .OrderBy(candidate => candidate.Todo.DueAtUtc)
             .Take(maxCount)
             .ToList();
 
         return Task.FromResult(results);
-    }
-
-    public Task SaveChangesAsync(CancellationToken cancellationToken)
-    {
-        SaveChangesCount++;
-
-        return Task.CompletedTask;
     }
 }

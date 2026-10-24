@@ -1,0 +1,61 @@
+<section class="todo-section">
+  <div class="section-heading">
+    <div>
+      <p class="eyebrow">BUGÜNÜN PLANI</p>
+      <h2>Görev listesi</h2>
+    </div>
+    @if (todos().length > 0) {
+      <span class="task-total"
+        >Bu sayfada {{ completedCount() }} / {{ todos().length }} tamamlandı</span
+      >
+    }
+  </div>
+  @if (loading) {
+    <div class="loading-state">Görevler yükleniyor…</div>
+  } @else if (todos().length === 0) {
+    <div class="empty-state">
+      <h3>Bu listede henüz görev yok</h3>
+      <p>İlk görevini ekleyerek planını oluşturmaya başla.</p>
+      <button nz-button nzType="primary" type="button" (click)="createRequested.emit()">
+        + İlk görevi ekle
+      </button>
+    </div>
+  } @else {
+    <div class="todo-list">
+      @for (todo of todos(); track todo.id) {
+        <app-todo-row
+          [todo]="todo"
+          [editing]="editingId === todo.id"
+          [saving]="saving"
+          [apiError]="apiError"
+          (editRequested)="editRequested.emit($event)"
+          (editCancelled)="editCancelled.emit()"
+          (updateRequested)="updateRequested.emit($event)"
+          (completionRequested)="completionRequested.emit($event)"
+          (deleteRequested)="deleteRequested.emit($event)"
+        />
+      }
+    </div>
+  }
+  @if (totalPages > 1) {
+    <nav class="pagination" aria-label="Görev sayfaları">
+      <button
+        nz-button
+        type="button"
+        [disabled]="busy || pageNumber <= 1"
+        (click)="pageRequested.emit(pageNumber - 1)"
+      >
+        Önceki
+      </button>
+      <span>{{ pageNumber }} / {{ totalPages }}</span>
+      <button
+        nz-button
+        type="button"
+        [disabled]="busy || pageNumber >= totalPages"
+        (click)="pageRequested.emit(pageNumber + 1)"
+      >
+        Sonraki
+      </button>
+    </nav>
+  }
+</section>

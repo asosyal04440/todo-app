@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -20,7 +22,8 @@ public class EmailSenderTests
             password: null,
             fromAddress: "todo@example.com",
             fromName: "Todo");
-        MailKitEmailSender sender = new MailKitEmailSender(settings);
+        MailKitEmailSender sender = new MailKitEmailSender(Options.Create(new SmtpOptions
+        { Host = settings.Host, Port = settings.Port, Security = settings.Security, FromAddress = settings.FromAddress, FromName = settings.FromName }));
         EmailMessage message = new EmailMessage(
             "ali@example.com",
             "Ali",

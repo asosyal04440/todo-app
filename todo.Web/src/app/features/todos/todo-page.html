@@ -1,0 +1,88 @@
+<app-workspace-layout>
+  <app-todo-list-sidebar
+    workspaceSidebar
+    [lists]="facade.todoLists()"
+    [selectedId]="facade.selectedList()?.id ?? null"
+    [totalCount]="facade.listTotalCount()"
+    [pageNumber]="facade.listPageNumber()"
+    [totalPages]="facade.listTotalPages()"
+    [loading]="facade.isLoadingLists()"
+    [saving]="facade.isSavingList()"
+    [apiError]="facade.errorTarget() === 'list-create' ? facade.error() : null"
+    [busy]="facade.isLoadingLists() || facade.isSavingList() || facade.isSavingTodo()"
+    [apiAvailable]="facade.isApiAvailable()"
+    [creationVersion]="facade.listCreationVersion()"
+    (createRequested)="facade.createList($event)"
+    (selectRequested)="facade.selectList($event)"
+    (pageRequested)="facade.changeListPage($event)"
+  />
+
+  <div workspaceMain>
+    <app-workspace-header
+      [user]="auth.currentUser()"
+      [isAdmin]="auth.isAdmin()"
+      [showCreate]="facade.selectedList() !== null"
+      (createRequested)="facade.isCreatingTodo.set(!facade.isCreatingTodo())"
+      (logoutRequested)="auth.logout()"
+    />
+
+    <app-api-errors [error]="facade.error()" />
+
+    @if (facade.selectedList(); as list) {
+      <app-todo-list-header
+        [list]="list"
+        [totalCount]="facade.todoTotalCount()"
+        [todos]="facade.todos()"
+        [renaming]="facade.isRenamingList()"
+        [saving]="facade.isSavingList()"
+        [apiError]="facade.errorTarget() === 'list-rename' ? facade.error() : null"
+        (renameStarted)="facade.isRenamingList.set(true)"
+        (renameCancelled)="facade.isRenamingList.set(false)"
+        (renameRequested)="facade.saveListName($event)"
+        (deleteRequested)="facade.deleteList()"
+      />
+
+      @if (facade.isCreatingTodo()) {
+        <app-todo-form
+          [saving]="facade.isSavingTodo()"
+          [apiError]="facade.errorTarget() === 'todo-create' ? facade.error() : null"
+          (submitted)="facade.createTodo($event)"
+          (cancelled)="facade.isCreatingTodo.set(false)"
+        />
+      }
+
+      <app-todo-list-view
+        [todos]="facade.todos()"
+        [loading]="facade.isLoadingTodos()"
+        [saving]="facade.isSavingTodo()"
+        [apiError]="
+          facade.errorTarget() === 'todo-edit' && facade.errorTodoId() === facade.editingTodoId()
+            ? facade.error()
+            : null
+        "
+        [editingId]="facade.editingTodoId()"
+        [pageNumber]="facade.todoPageNumber()"
+        [totalPages]="facade.todoTotalPages()"
+        [busy]="
+          facade.isLoadingLists() ||
+          facade.isLoadingTodos() ||
+          facade.isSavingTodo() ||
+          facade.isSavingList()
+        "
+        (createRequested)="facade.isCreatingTodo.set(true)"
+        (editRequested)="facade.editingTodoId.set($event.id)"
+        (editCancelled)="facade.editingTodoId.set(null)"
+        (updateRequested)="facade.saveTodo($event.todo, $event.request)"
+        (completionRequested)="facade.setTodoCompletion($event.todo, $event.isCompleted)"
+        (deleteRequested)="facade.deleteTodo($event)"
+        (pageRequested)="facade.changeTodoPage($event)"
+      />
+    } @else {
+      <section class="welcome-card">
+        <p class="eyebrow">BAŞLAMAYA HAZIR</p>
+        <h2>İlk listeni oluştur</h2>
+        <p>İş, ev veya aklındaki başka şeyler için bir liste ekle.</p>
+      </section>
+    }
+  </div>
+</app-workspace-layout>

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using Microsoft.Extensions.Configuration;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Domain.Enums;
 
@@ -45,27 +44,5 @@ public sealed class ConfiguredRoleAssignmentPolicy : IRoleAssignmentPolicy
         }
 
         return UserRole.User;
-    }
-
-    public static ConfiguredRoleAssignmentPolicy FromConfiguration(IConfiguration configuration)
-    {
-        if (configuration == null)
-        {
-            throw new ArgumentNullException(nameof(configuration));
-        }
-
-        List<string> adminEmails = new List<string>();
-
-        foreach (IConfigurationSection child in configuration.GetSection(AdminEmailsSectionName).GetChildren())
-        {
-            if (child.Value != null)
-            {
-                adminEmails.Add(child.Value);
-            }
-        }
-
-        ConfiguredRoleAssignmentPolicy policy = new ConfiguredRoleAssignmentPolicy(adminEmails);
-
-        return policy;
     }
 }

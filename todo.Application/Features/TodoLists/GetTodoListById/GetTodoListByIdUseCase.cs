@@ -1,56 +1,14 @@
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
-using TodoApi.Application.Authorization;
+using TodoApi.Application.Common.Execution;
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Contracts;
-using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.TodoLists.GetTodoListById;
 
-public class GetTodoListByIdUseCase
+public class GetTodoListByIdUseCase(ITodoReadQueries queries, ICurrentUser currentUser, UseCasePipeline<ListIdRequest, TodoListDto> pipeline) : UseCase<ListIdRequest, TodoListDto>(pipeline)
 {
-    private readonly ITodoListRepository _todoListRepository;
-    private readonly ICurrentUser _currentUser;
-
-    public GetTodoListByIdUseCase(
-        ITodoListRepository todoListRepository,
-        ICurrentUser currentUser)
-    {
-        if (todoListRepository == null)
-        {
-            throw new ArgumentNullException(nameof(todoListRepository));
-        }
-
-        if (currentUser == null)
-        {
-            throw new ArgumentNullException(nameof(currentUser));
-        }
-
-        _todoListRepository = todoListRepository;
-        _currentUser = currentUser;
-    }
-
-    public async Task<TodoListDto?> ExecuteAsync(
-        int todoListId,
-        CancellationToken cancellationToken = default)
-    {
-        TodoList? todoList = await _todoListRepository.GetByIdWithTodosAsync(
-            todoListId,
-            cancellationToken);
-
-        if (todoList == null)
-        {
-            return null;
-        }
-
-        bool canAccessTodoList = TodoListAccessPolicy.CanAccess(todoList, _currentUser);
-
-        if (canAccessTodoList == false)
-        {
-            return null;
-        }
-
-        TodoListDto response = new TodoListDto(todoList);
-
-        return response;
-    }
+    public Task<Result<TodoListDto>> ExecuteAsync(int todoListId, CancellationToken cancellationToken = default) => base.ExecuteAsync(new ListIdRequest(todoListId), cancellationToken);
+    protected override Task<Result<TodoListDto>> HandleAsync(ListIdRequest request, CancellationToken cancellationToken) =>
+        queries.GetListAsync(request.TodoListId, currentUser.UserId, currentUser.IsAdmin, cancellationToken);
 }

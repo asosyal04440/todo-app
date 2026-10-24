@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Domain.Entities;
+using TodoApi.Domain.Common;
 
 namespace TodoApi.Infrastructure.Persistence;
 
@@ -21,23 +22,6 @@ public sealed class TodoListRepository : ITodoListRepository
         }
 
         _todoDbContext = todoDbContext;
-    }
-
-    public async Task<IReadOnlyList<TodoList>> GetAllByOwnerAsync(
-        int ownerUserId,
-        CancellationToken cancellationToken)
-    {
-        IQueryable<TodoList> todoListQuery = _todoDbContext.TodoLists;
-
-        todoListQuery = todoListQuery.AsNoTracking();
-        todoListQuery = todoListQuery.Where(todoList => todoList.OwnerUserId == ownerUserId);
-        todoListQuery = todoListQuery.OrderBy(todoList => todoList.Id);
-
-        List<TodoList> todoLists = await todoListQuery.ToListAsync(cancellationToken);
-
-        IReadOnlyList<TodoList> result = todoLists;
-
-        return result;
     }
 
     public async Task<TodoList?> GetByIdWithTodosAsync(
@@ -61,10 +45,11 @@ public sealed class TodoListRepository : ITodoListRepository
         int? excludedTodoListId,
         CancellationToken cancellationToken)
     {
+        string normalizedName = NameComparison.NormalizeForLookup(name);
         IQueryable<TodoList> todoListQuery = _todoDbContext.TodoLists;
 
         todoListQuery = todoListQuery.Where(todoList =>
-            todoList.OwnerUserId == ownerUserId && todoList.Name == name);
+            todoList.OwnerUserId == ownerUserId && todoList.NormalizedName == normalizedName);
 
         if (excludedTodoListId.HasValue)
         {
@@ -97,10 +82,5 @@ public sealed class TodoListRepository : ITodoListRepository
         }
 
         _todoDbContext.TodoLists.Remove(todoList);
-    }
-
-    public async Task SaveChangesAsync(CancellationToken cancellationToken)
-    {
-        await _todoDbContext.SaveChangesAsync(cancellationToken);
     }
 }

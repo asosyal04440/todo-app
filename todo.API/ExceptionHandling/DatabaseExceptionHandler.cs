@@ -2,12 +2,14 @@ using System.Data.Common;
 using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.AspNetCore.Mvc;
 using TodoApi.Application.Exceptions;
+using TodoApi.Application.Common.Results;
+using TodoApi.API.Models.Responses;
 
 namespace TodoApi.API.ExceptionHandling;
 
 public sealed class DatabaseExceptionHandler : IExceptionHandler
 {
-    public const string ConcurrencyConflictProblemType = "urn:todo:problem:concurrency-conflict";
+    public const string ConcurrencyConflictProblemType = ResultHttpMapping.ConcurrencyConflictProblemType;
 
     private readonly ILogger<DatabaseExceptionHandler> _logger;
 
@@ -30,12 +32,7 @@ public sealed class DatabaseExceptionHandler : IExceptionHandler
                 "A database uniqueness rule rejected a write for {RequestPath}.",
                 httpContext.Request.Path);
 
-            problemDetails = new ProblemDetails
-            {
-                Status = StatusCodes.Status409Conflict,
-                Title = "The record conflicts with existing data.",
-                Detail = exception.Message
-            };
+            problemDetails = ResultHttpMapping.CreateProblem(AppErrors.DataConflict(exception.Message));
         }
         else if (exception is ConcurrencyConflictException)
         {
@@ -43,13 +40,7 @@ public sealed class DatabaseExceptionHandler : IExceptionHandler
                 "A concurrent request changed or deleted the record first for {RequestPath}.",
                 httpContext.Request.Path);
 
-            problemDetails = new ProblemDetails
-            {
-                Type = ConcurrencyConflictProblemType,
-                Status = StatusCodes.Status409Conflict,
-                Title = "The record was changed by another request.",
-                Detail = "The record was changed or deleted by another request. Reload and try again."
-            };
+            problemDetails = ResultHttpMapping.CreateProblem(AppErrors.ConcurrentWrite);
         }
         else if (exception is DataAccessException || ContainsDatabaseException(exception))
         {

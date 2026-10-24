@@ -4,22 +4,22 @@ using TodoApi.Domain.Exceptions;
 
 namespace TodoApi.Domain.Entities;
 
-public class TodoList
+public class TodoList : AuditableEntity
 {
-    private const int MaximumNameLength = 80;
+    public const int MaximumNameLength = 80;
+    public const int MaximumNormalizedNameLength = MaximumNameLength * 3;
 
     private int _id;
     private string _name = string.Empty;
     private int _ownerUserId;
-    private DateTime _createdAtUtc;
     private readonly List<TodoItem> _todos = new List<TodoItem>();
 
     public TodoList(string name, int ownerUserId)
     {
         string normalizedName = ValidateAndNormalizeName(name);
         Name = normalizedName;
+        NormalizedName = NameComparison.NormalizeForLookup(normalizedName);
         OwnerUserId = ValidateOwnerUserId(ownerUserId);
-        CreatedAtUtc = DateTime.UtcNow;
     }
 
     public int Id
@@ -33,6 +33,8 @@ public class TodoList
             _id = value;
         }
     }
+
+    public string NormalizedName { get; private set; }
 
     public string Name
     {
@@ -58,18 +60,6 @@ public class TodoList
         }
     }
 
-    public DateTime CreatedAtUtc
-    {
-        get
-        {
-            return _createdAtUtc;
-        }
-        private set
-        {
-            _createdAtUtc = value;
-        }
-    }
-
     public IReadOnlyCollection<TodoItem> Todos
     {
         get
@@ -86,7 +76,9 @@ public class TodoList
     public void Rename(string name)
     {
         string normalizedName = ValidateAndNormalizeName(name);
+        string nameKey = NameComparison.NormalizeForLookup(normalizedName);
         Name = normalizedName;
+        NormalizedName = nameKey;
     }
 
     public TodoItem AddTodo(
@@ -158,14 +150,15 @@ public class TodoList
 
     private void EnsureTitleIsUnique(string title, TodoItem? todoBeingRenamed)
     {
+        string normalizedTitle = NameComparison.NormalizeForLookup(title);
         foreach (TodoItem existingTodo in _todos)
         {
-            if (ReferenceEquals(existingTodo, todoBeingRenamed))
+            if (existingTodo.IsDeleted || ReferenceEquals(existingTodo, todoBeingRenamed))
             {
                 continue;
             }
 
-            if (NameComparison.AreSame(existingTodo.Title, title))
+            if (string.Equals(existingTodo.NormalizedTitle, normalizedTitle, StringComparison.Ordinal))
             {
                 throw new DuplicateNameException(
                     "A todo with the same title already exists in this list.");

@@ -1,29 +1,33 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using FluentValidation;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
-using TodoApi.Application.Common.Validation;
 using TodoApi.Application.Exceptions;
 using TodoApi.Application.Features.Authentication.Common;
+using TodoApi.Domain.Common;
 using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Authentication.RegisterWithPassword;
 
-public class RegisterWithPasswordUseCase
+public class RegisterWithPasswordUseCase : UseCase<RegisterWithPasswordCommand, AuthSession>
 {
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IUserRepository _userRepository;
     private readonly IPasswordHasher _passwordHasher;
     private readonly SessionIssuer _sessionIssuer;
-    private readonly IValidator<RegisterWithPasswordCommand> _validator;
 
     public RegisterWithPasswordUseCase(
+        IUnitOfWork unitOfWork,
         IUserRepository userRepository,
         IPasswordHasher passwordHasher,
         SessionIssuer sessionIssuer,
-        IValidator<RegisterWithPasswordCommand> validator)
+        UseCasePipeline<RegisterWithPasswordCommand, AuthSession> pipeline) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (userRepository == null)
         {
             throw new ArgumentNullException(nameof(userRepository));
@@ -39,23 +43,15 @@ public class RegisterWithPasswordUseCase
             throw new ArgumentNullException(nameof(sessionIssuer));
         }
 
-        if (validator == null)
-        {
-            throw new ArgumentNullException(nameof(validator));
-        }
-
+        _unitOfWork = unitOfWork;
         _userRepository = userRepository;
         _passwordHasher = passwordHasher;
         _sessionIssuer = sessionIssuer;
-        _validator = validator;
     }
 
-    public async Task<AuthSession> ExecuteAsync(
-        RegisterWithPasswordCommand command,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<AuthSession>> HandleAsync(
+        RegisterWithPasswordCommand command, CancellationToken cancellationToken)
     {
-        await _validator.ValidateOrThrowAsync(command, cancellationToken);
-
         string normalizedEmail = EmailNormalizer.Normalize(command.Email);
 
         User? existingUser = await _userRepository.GetByEmailAsync(
@@ -64,7 +60,7 @@ public class RegisterWithPasswordUseCase
 
         if (existingUser != null)
         {
-            throw new EmailAlreadyRegisteredException();
+            return Result<AuthSession>.Failure(AppErrors.EmailAlreadyRegistered);
         }
 
         string passwordHash = _passwordHasher.HashPassword(command.Password);
@@ -75,10 +71,11 @@ public class RegisterWithPasswordUseCase
             passwordHash);
 
         await _userRepository.AddAsync(newUser, cancellationToken);
-        await _userRepository.SaveChangesAsync(cancellationToken);
 
-        AuthSession session = await _sessionIssuer.IssueAsync(newUser, cancellationToken);
+        PendingAuthSession session = await _sessionIssuer.PrepareAsync(newUser, cancellationToken);
 
-        return session;
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result<AuthSession>.Success(_sessionIssuer.CreateSession(session));
     }
 }

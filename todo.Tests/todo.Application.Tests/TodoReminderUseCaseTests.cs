@@ -1,3 +1,4 @@
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Application.Features.Reminders.SendDueTodoReminders;
 using TodoApi.Domain.Entities;
@@ -18,7 +19,7 @@ public class TodoReminderUseCaseTests
     {
         TodoItem todo = AddCandidate("Raporu teslim et", Now.UtcDateTime.AddHours(3), "ali@example.com");
 
-        ReminderRunResult result = await CreateUseCase().ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult result = TestResults.Success(await CreateUseCase().ExecuteAsync(TestContext.Current.CancellationToken));
 
         var message = Assert.Single(_emailSender.SentMessages);
         Assert.Equal("ali@example.com", message.ToAddress);
@@ -48,7 +49,7 @@ public class TodoReminderUseCaseTests
         AddCandidate("Gelecek hafta", Now.UtcDateTime.AddDays(7), "ali@example.com");
         AddCandidate("Süresi geçmiş", Now.UtcDateTime.AddHours(-1), "ali@example.com");
 
-        ReminderRunResult result = await CreateUseCase().ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult result = TestResults.Success(await CreateUseCase().ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Empty(_emailSender.SentMessages);
         Assert.Equal(0, result.CandidateCount);
@@ -62,7 +63,7 @@ public class TodoReminderUseCaseTests
         _emailSender.FailFor("bozuk@example.com");
         SendDueTodoRemindersUseCase useCase = CreateUseCase();
 
-        ReminderRunResult firstRun = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult firstRun = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(1, firstRun.SentCount);
         Assert.Equal(failingTodo.Id, Assert.Single(firstRun.Failures).TodoId);
@@ -71,7 +72,7 @@ public class TodoReminderUseCaseTests
 
         _emailSender.StopFailing();
         _timeProvider.Advance(TimeSpan.FromMinutes(15));
-        ReminderRunResult secondRun = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult secondRun = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(1, secondRun.SentCount);
         Assert.NotNull(failingTodo.ReminderSentAtUtc);
@@ -101,8 +102,8 @@ public class TodoReminderUseCaseTests
             AddCandidate($"Görev {index}", Now.UtcDateTime.AddHours(1 + index), "ali@example.com");
         }
 
-        ReminderRunResult result = await CreateUseCase(batchSize: 2)
-            .ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult result = TestResults.Success(await CreateUseCase(batchSize: 2)
+            .ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(2, result.SentCount);
         Assert.Equal(2, _emailSender.SentMessages.Count);
@@ -117,9 +118,9 @@ public class TodoReminderUseCaseTests
         _emailSender.FailFor("kapali@example.com");
         SendDueTodoRemindersUseCase useCase = CreateUseCase(batchSize: 2);
 
-        ReminderRunResult firstRun = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult firstRun = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
-        ReminderRunResult secondRun = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult secondRun = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(0, firstRun.SentCount);
         Assert.Equal(2, firstRun.Failures.Count);
@@ -137,7 +138,7 @@ public class TodoReminderUseCaseTests
 
         for (int run = 0; run < 5; run++)
         {
-            runs.Add(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
+            runs.Add(TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken)));
             _timeProvider.Advance(TimeSpan.FromMinutes(15));
         }
 
@@ -156,7 +157,7 @@ public class TodoReminderUseCaseTests
         _emailSender.MakeServiceUnavailable();
         SendDueTodoRemindersUseCase useCase = CreateUseCase();
 
-        ReminderRunResult result = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult result = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.True(result.EmailServiceUnavailable);
         Assert.Equal(1, _emailSender.AttemptCount);
@@ -165,7 +166,7 @@ public class TodoReminderUseCaseTests
 
         _emailSender.StopFailing();
         _timeProvider.Advance(TimeSpan.FromMinutes(5));
-        ReminderRunResult nextRun = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        ReminderRunResult nextRun = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Equal(2, nextRun.SentCount);
     }
@@ -191,6 +192,11 @@ public class TodoReminderUseCaseTests
             maximumAttempts: 3,
             retryDelay: TimeSpan.FromMinutes(15));
 
-        return new SendDueTodoRemindersUseCase(_repository, _emailSender, settings, _timeProvider);
+        return new SendDueTodoRemindersUseCase(_repository.UnitOfWork,
+            _repository,
+            _emailSender,
+            settings,
+            _timeProvider,
+            TestUseCasePipelines.ForSendDueTodoReminders());
     }
 }

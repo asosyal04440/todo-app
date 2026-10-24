@@ -13,8 +13,28 @@ public class RefreshToken
     private string? _replacedByTokenHash;
 
     public RefreshToken(int userId, string tokenHash, DateTime createdAtUtc, DateTime expiresAtUtc)
+        : this(userId, tokenHash, createdAtUtc, expiresAtUtc, user: null)
     {
-        if (userId <= 0)
+    }
+
+    public RefreshToken(User user, string tokenHash, DateTime createdAtUtc, DateTime expiresAtUtc)
+        : this(
+            user?.Id ?? throw new ArgumentNullException(nameof(user)),
+            tokenHash,
+            createdAtUtc,
+            expiresAtUtc,
+            user)
+    {
+    }
+
+    private RefreshToken(
+        int userId,
+        string tokenHash,
+        DateTime createdAtUtc,
+        DateTime expiresAtUtc,
+        User? user)
+    {
+        if (userId <= 0 && user == null)
         {
             throw new DomainRuleViolationException(
                 "A refresh token must belong to a saved user.");
@@ -36,7 +56,10 @@ public class RefreshToken
         TokenHash = tokenHash;
         CreatedAtUtc = createdAtUtc;
         ExpiresAtUtc = expiresAtUtc;
+        User = user;
     }
+
+    public User? User { get; private set; }
 
     public int Id
     {

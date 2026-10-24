@@ -5,15 +5,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace TodoApi.Infrastructure.Persistence.Migrations
 {
-    /// <inheritdoc />
     public partial class AddUsersAndTodoListOwnership : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            // Bu migration'dan önce oluşturulan listelerin bir sahibi yoktur.
-            // Her liste artık bir kullanıcıya ait olmak zorunda olduğundan, sahipsiz geliştirme verileri silinir.
-            // Görevler, TodoItems tablosundaki cascade kuralı sayesinde listeleriyle birlikte silinir.
             migrationBuilder.Sql("DELETE FROM [TodoLists];");
 
             migrationBuilder.AddColumn<int>(
@@ -68,7 +63,6 @@ namespace TodoApi.Infrastructure.Persistence.Migrations
                 onDelete: ReferentialAction.Cascade);
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropForeignKey(

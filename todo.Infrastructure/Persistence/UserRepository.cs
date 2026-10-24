@@ -52,20 +52,6 @@ public sealed class UserRepository : IUserRepository
         return user;
     }
 
-    public async Task<IReadOnlyList<User>> GetAllAsync(CancellationToken cancellationToken)
-    {
-        IQueryable<User> userQuery = _todoDbContext.Users;
-
-        userQuery = userQuery.AsNoTracking();
-        userQuery = userQuery.OrderBy(user => user.Id);
-
-        List<User> users = await userQuery.ToListAsync(cancellationToken);
-
-        IReadOnlyList<User> result = users;
-
-        return result;
-    }
-
     public async Task AddAsync(User user, CancellationToken cancellationToken)
     {
         if (user == null)
@@ -74,10 +60,5 @@ public sealed class UserRepository : IUserRepository
         }
 
         await _todoDbContext.Users.AddAsync(user, cancellationToken);
-    }
-
-    public async Task SaveChangesAsync(CancellationToken cancellationToken)
-    {
-        await _todoDbContext.SaveChangesAsync(cancellationToken);
     }
 }

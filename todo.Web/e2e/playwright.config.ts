@@ -32,7 +32,9 @@ export default defineConfig({
     },
     {
       command:
-        'node ./node_modules/@angular/cli/bin/ng.js serve --host localhost --port 4201',
+        process.env.TODO_E2E_PRODUCTION === 'true'
+          ? 'node e2e/serve-production.mjs'
+          : 'node ./node_modules/@angular/cli/bin/ng.js serve --host localhost --port 4201 --proxy-config e2e/proxy.conf.json',
       cwd: webDirectory,
       url: 'http://localhost:4201',
       reuseExistingServer: false,

@@ -62,9 +62,4 @@ public sealed class RefreshTokenRepository : IRefreshTokenRepository
 
         await _todoDbContext.RefreshTokens.AddAsync(refreshToken, cancellationToken);
     }
-
-    public async Task SaveChangesAsync(CancellationToken cancellationToken)
-    {
-        await _todoDbContext.SaveChangesAsync(cancellationToken);
-    }
 }

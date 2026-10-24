@@ -1,5 +1,4 @@
 using System;
-using Microsoft.Extensions.Configuration;
 
 namespace TodoApi.Infrastructure.Services.Email;
 
@@ -118,42 +117,6 @@ public sealed class SmtpSettings
 
             return _host.Length > 0 && _fromAddress.Length > 0 && hasCredentialsIfNeeded;
         }
-    }
-
-    public static SmtpSettings FromConfiguration(IConfiguration configuration)
-    {
-        if (configuration == null)
-        {
-            throw new ArgumentNullException(nameof(configuration));
-        }
-
-        IConfigurationSection section = configuration.GetSection(SectionName);
-
-        string portText = section["Port"] ?? "587";
-        bool portIsNumber = int.TryParse(portText, out int port);
-
-        if (portIsNumber == false)
-        {
-            throw new InvalidOperationException("The Email:Smtp:Port setting must be a whole number.");
-        }
-
-        string securityText = section["Security"] ?? nameof(SmtpSecurity.StartTls);
-        bool securityIsKnown = Enum.TryParse(securityText, ignoreCase: true, out SmtpSecurity security);
-
-        if (securityIsKnown == false || Enum.IsDefined(typeof(SmtpSecurity), security) == false)
-        {
-            throw new InvalidOperationException(
-                "The Email:Smtp:Security setting must be StartTls, SslOnConnect or None.");
-        }
-
-        return new SmtpSettings(
-            section["Host"] ?? string.Empty,
-            port,
-            security,
-            section["Username"],
-            section["Password"],
-            section["FromAddress"],
-            section["FromName"]);
     }
 
     private static bool IsLocalHost(string host)

@@ -9,8 +9,6 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
     private readonly List<RefreshToken> _refreshTokens = new List<RefreshToken>();
     private int _nextId = 1;
 
-    public int SaveChangesCount { get; private set; }
-
     public IReadOnlyList<RefreshToken> RefreshTokens
     {
         get
@@ -46,10 +44,17 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
         return Task.CompletedTask;
     }
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken)
+    public void ApplyChanges()
     {
         foreach (RefreshToken refreshToken in _refreshTokens)
         {
+            if (refreshToken.User != null)
+            {
+                typeof(RefreshToken).GetProperty(nameof(RefreshToken.UserId))!
+                    .GetSetMethod(nonPublic: true)!
+                    .Invoke(refreshToken, new object[] { refreshToken.User.Id });
+            }
+
             if (refreshToken.Id == 0)
             {
                 PropertyInfo property = typeof(RefreshToken).GetProperty(nameof(RefreshToken.Id))!;
@@ -58,8 +63,5 @@ public sealed class FakeRefreshTokenRepository : IRefreshTokenRepository
             }
         }
 
-        SaveChangesCount++;
-
-        return Task.CompletedTask;
     }
 }

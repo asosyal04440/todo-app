@@ -1,5 +1,4 @@
 using System;
-using Microsoft.Extensions.Configuration;
 
 namespace TodoApi.Infrastructure.Services.Authentication;
 
@@ -35,19 +34,5 @@ public sealed class GoogleAuthenticationSettings
         {
             return _clientId != null;
         }
-    }
-
-    public static GoogleAuthenticationSettings FromConfiguration(IConfiguration configuration)
-    {
-        if (configuration == null)
-        {
-            throw new ArgumentNullException(nameof(configuration));
-        }
-
-        IConfigurationSection section = configuration.GetSection(SectionName);
-
-        GoogleAuthenticationSettings settings = new GoogleAuthenticationSettings(section["ClientId"]);
-
-        return settings;
     }
 }

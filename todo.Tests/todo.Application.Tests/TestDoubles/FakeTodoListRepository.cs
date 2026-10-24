@@ -1,17 +1,24 @@
 using System.Reflection;
 using TodoApi.Domain.Common;
 using TodoApi.Application.Abstractions.Persistence;
+using TodoApi.Application.Contracts;
+using TodoApi.Application.Common.Results;
 using TodoApi.Domain.Entities;
 
 namespace todo.Application.Tests.TestDoubles;
 
-public sealed class FakeTodoListRepository : ITodoListRepository
+public sealed class FakeTodoListRepository : ITodoListRepository, ITodoReadQueries
 {
+    public FakeTodoListRepository()
+    {
+        UnitOfWork = new FakeUnitOfWork(ApplyChanges);
+    }
+
+    public FakeUnitOfWork UnitOfWork { get; }
+
     private readonly List<TodoList> _todoLists = new List<TodoList>();
     private int _nextTodoListId = 1;
     private int _nextTodoItemId = 1;
-
-    public int SaveChangesCount { get; private set; }
 
     public IReadOnlyList<TodoList> TodoLists
     {
@@ -43,16 +50,51 @@ public sealed class FakeTodoListRepository : ITodoListRepository
         return todoItem;
     }
 
-    public Task<IReadOnlyList<TodoList>> GetAllByOwnerAsync(
+    public Task<PagedResult<TodoListDto>> GetListsAsync(
         int ownerUserId,
+        PageRequest page,
         CancellationToken cancellationToken)
     {
-        IReadOnlyList<TodoList> results = _todoLists
+        var results = _todoLists
             .Where(todoList => todoList.OwnerUserId == ownerUserId)
+            .OrderBy(todoList => todoList.Id)
             .ToList();
 
-        return Task.FromResult(results);
+        return Task.FromResult(new PagedResult<TodoListDto>(results.Skip(page.Offset).Take(page.PageSize)
+            .Select(list => new TodoListDto(list)).ToList(), results.Count, page));
     }
+
+    public Task<Result<TodoListDto>> GetListAsync(int listId, int userId, bool isAdmin, CancellationToken cancellationToken)
+    {
+        TodoList? list = _todoLists.FirstOrDefault(list => list.Id == listId);
+        return Task.FromResult(list == null ? Result<TodoListDto>.Failure(AppErrors.ListNotFound)
+            : !isAdmin && list.OwnerUserId != userId ? Result<TodoListDto>.Failure(AppErrors.AccessDenied)
+            : Result<TodoListDto>.Success(new TodoListDto(list)));
+    }
+
+    public Task<Result<PagedResult<TodoItemDto>>> GetTodosAsync(int listId, int userId, bool isAdmin,
+        PageRequest page, CancellationToken cancellationToken)
+    {
+        TodoList? list = _todoLists.FirstOrDefault(list => list.Id == listId);
+        if (list == null) return Task.FromResult(Result<PagedResult<TodoItemDto>>.Failure(AppErrors.ListNotFound));
+        if (!isAdmin && list.OwnerUserId != userId) return Task.FromResult(Result<PagedResult<TodoItemDto>>.Failure(AppErrors.AccessDenied));
+        var items = list.Todos.OrderBy(todo => todo.Id).Skip(page.Offset).Take(page.PageSize)
+            .Select(todo => new TodoItemDto(todo)).ToList();
+        return Task.FromResult(Result<PagedResult<TodoItemDto>>.Success(new PagedResult<TodoItemDto>(items, list.Todos.Count, page)));
+    }
+
+    public Task<Result<TodoItemDto>> GetTodoAsync(int listId, int todoId, int userId, bool isAdmin, CancellationToken cancellationToken)
+    {
+        TodoList? list = _todoLists.FirstOrDefault(list => list.Id == listId);
+        if (list == null) return Task.FromResult(Result<TodoItemDto>.Failure(AppErrors.ListNotFound));
+        if (!isAdmin && list.OwnerUserId != userId) return Task.FromResult(Result<TodoItemDto>.Failure(AppErrors.AccessDenied));
+        TodoItem? todo = list.Todos.FirstOrDefault(todo => todo.Id == todoId);
+        return Task.FromResult(todo == null ? Result<TodoItemDto>.Failure(AppErrors.TodoNotFound)
+            : Result<TodoItemDto>.Success(new TodoItemDto(todo)));
+    }
+
+    private TodoList? AccessibleList(int listId, int userId, bool isAdmin) =>
+        _todoLists.FirstOrDefault(list => list.Id == listId && (isAdmin || list.OwnerUserId == userId));
 
     public Task<TodoList?> GetByIdWithTodosAsync(
         int todoListId,
@@ -92,7 +134,7 @@ public sealed class FakeTodoListRepository : ITodoListRepository
         _todoLists.Remove(todoList);
     }
 
-    public Task SaveChangesAsync(CancellationToken cancellationToken)
+    public void ApplyChanges()
     {
         foreach (TodoList todoList in _todoLists)
         {
@@ -120,9 +162,6 @@ public sealed class FakeTodoListRepository : ITodoListRepository
             }
         }
 
-        SaveChangesCount++;
-
-        return Task.CompletedTask;
     }
 
     private static void SetPrivateProperty<T>(

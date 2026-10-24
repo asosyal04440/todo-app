@@ -75,7 +75,7 @@ try
 
     builder.Services.AddApplication();
     builder.Services.AddInfrastructure(builder.Configuration);
-    builder.Services.AddTodoAuthentication(builder.Configuration);
+    builder.Services.AddTodoAuthentication();
 
     builder.Services.AddTodoBackgroundJobs(builder.Configuration);
 

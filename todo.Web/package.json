@@ -4,11 +4,20 @@
   "scripts": {
     "ng": "ng",
     "start": "ng serve --open",
-    "build": "ng build",
+    "build": "node tools/build.mjs",
+    "build:development": "npm run build -- --configuration development",
+    "build:production": "npm run build -- --configuration production",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:e2e": "node e2e/run-e2e.mjs",
-    "test:e2e:install": "playwright install chromium"
+    "test:e2e:production": "npm run build && node e2e/run-e2e.mjs --production",
+    "test:e2e:install": "playwright install chromium",
+    "test:lazy": "npm run build && playwright test --config e2e/lazy-loading.config.ts",
+    "check:architecture": "node tools/check-feature-boundaries.mjs",
+    "test:architecture": "node --test tools/check-feature-boundaries.spec.mjs",
+    "test:deployment": "node --test tools/configure-deployment.spec.mjs tools/build.spec.mjs",
+    "prebuild": "npm run check:architecture",
+    "pretest": "npm run check:architecture"
   },
   "private": true,
   "packageManager": "npm@10.9.8",

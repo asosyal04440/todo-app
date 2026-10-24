@@ -1,13 +1,11 @@
 using FluentValidation;
+using TodoApi.Domain.Entities;
 using TodoApi.Domain.Enums;
 
 namespace TodoApi.Application.Common.Validation;
 
 public static class SharedValidationRules
 {
-    public const int TodoListNameMaximumLength = 80;
-    public const int TodoTitleMaximumLength = 120;
-    public const int TodoDescriptionMaximumLength = 1000;
     public const int TodoDueDateMaximumYearsAhead = 10;
     public const string TodoDueDateInThePastMessage = "'Bitiş tarihi' geçmişte olamaz.";
     public const string TodoDueDateTooFarAheadMessage = "'Bitiş tarihi' en fazla 10 yıl sonrası olabilir.";
@@ -18,7 +16,7 @@ public static class SharedValidationRules
     {
         return rule
             .NotEmpty()
-            .MaximumLength(TodoListNameMaximumLength)
+            .MaximumLength(TodoList.MaximumNameLength)
             .WithName("Liste adı");
     }
 
@@ -26,14 +24,14 @@ public static class SharedValidationRules
     {
         return rule
             .NotEmpty()
-            .MaximumLength(TodoTitleMaximumLength)
+            .MaximumLength(TodoItem.MaximumTitleLength)
             .WithName("Görev adı");
     }
 
     public static IRuleBuilderOptions<T, string?> TodoDescription<T>(this IRuleBuilder<T, string?> rule)
     {
         return rule
-            .MaximumLength(TodoDescriptionMaximumLength)
+            .MaximumLength(TodoItem.MaximumDescriptionLength)
             .WithName("Açıklama");
     }
 

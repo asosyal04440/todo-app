@@ -1,0 +1,78 @@
+<section
+  class="editor-card"
+  [class.new-todo-card]="todo === null"
+  [class.todo-edit-card]="todo !== null"
+>
+  <div class="editor-heading">
+    <div>
+      <p class="eyebrow">{{ todo ? 'GÖREVİ DÜZENLE' : 'LİSTEYE EKLE' }}</p>
+      <h2>{{ todo ? 'Bilgileri güncelle' : 'Yeni görev' }}</h2>
+    </div>
+    <button nz-button type="button" (click)="cancelled.emit()">Kapat</button>
+  </div>
+  <form [formGroup]="form" class="todo-form" (ngSubmit)="submit()">
+    <label class="field-group field-full"
+      ><span>Görev adı</span>
+      <input
+        nz-input
+        name="todoTitle"
+        formControlName="title"
+        placeholder="Örneğin: Raporu tamamla"
+        [maxlength]="validationLimits.todoTitleMaximumLength"
+        required
+      />
+      <app-form-field-error
+        [control]="form.controls.title"
+        [messages]="{ required: 'Görev başlığı boş olamaz.' }"
+      />
+    </label>
+    <label class="field-group field-full"
+      ><span>Açıklama <small>İsteğe bağlı</small></span>
+      <textarea
+        nz-input
+        name="todoDescription"
+        formControlName="description"
+        placeholder="Görevle ilgili kısa bir not"
+        [maxlength]="validationLimits.todoDescriptionMaximumLength"
+        rows="3"
+      ></textarea>
+      <app-form-field-error [control]="form.controls.description" [messages]="{}" />
+    </label>
+    <label class="field-group"
+      ><span>Bitiş tarihi <small>İsteğe bağlı</small></span>
+      <input
+        nz-input
+        name="todoDueAtLocal"
+        formControlName="dueAtLocal"
+        [min]="minimumDueAtLocal()"
+        type="datetime-local"
+      />
+      <app-form-field-error
+        [control]="form.controls.dueAtLocal"
+        [messages]="{
+          pastDate: 'Bitiş tarihi geçmişte olamaz.',
+          futureDate: 'Bitiş tarihi en fazla 10 yıl sonrası olabilir.',
+        }"
+      />
+    </label>
+    <div class="field-group">
+      <label [attr.for]="todo ? 'editedPriority' + todo.id : 'newTodoPriority'">Öncelik</label>
+      <nz-select
+        [nzId]="todo ? 'editedPriority' + todo.id : 'newTodoPriority'"
+        name="todoPriority"
+        formControlName="priority"
+        nzPlaceHolder="Öncelik seç"
+      >
+        <nz-option nzValue="Low" nzLabel="Düşük"></nz-option>
+        <nz-option nzValue="Normal" nzLabel="Normal"></nz-option>
+        <nz-option nzValue="High" nzLabel="Yüksek"></nz-option>
+      </nz-select>
+    </div>
+    <div class="form-actions field-full">
+      <button nz-button nzType="primary" type="submit" [nzLoading]="saving">
+        {{ todo ? 'Değişiklikleri kaydet' : 'Görevi oluştur' }}
+      </button>
+      <button nz-button type="button" (click)="cancelled.emit()">Vazgeç</button>
+    </div>
+  </form>
+</section>

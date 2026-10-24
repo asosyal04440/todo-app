@@ -1,3 +1,4 @@
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Contracts;
 using TodoApi.Application.Exceptions;
@@ -15,6 +16,15 @@ namespace todo.Application.Tests;
 
 public class AuthenticationUseCaseTests
 {
+    private readonly FakeUnitOfWork _unitOfWork;
+
+    public AuthenticationUseCaseTests()
+    {
+        _unitOfWork = new FakeUnitOfWork(
+            _userRepository.ApplyChanges,
+            _refreshTokenRepository.ApplyChanges);
+    }
+
     private readonly FakeUserRepository _userRepository = new FakeUserRepository();
     private readonly FakeRefreshTokenRepository _refreshTokenRepository = new FakeRefreshTokenRepository();
     private readonly FakePasswordHasher _passwordHasher = new FakePasswordHasher();
@@ -27,9 +37,9 @@ public class AuthenticationUseCaseTests
     {
         RegisterWithPasswordUseCase useCase = CreateRegisterUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new RegisterWithPasswordCommand { Email = "  Ali@Example.com ", DisplayName = "Ali", Password = "Sifre1234" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         User savedUser = Assert.Single(_userRepository.Users);
         Assert.Equal("ali@example.com", savedUser.Email);
@@ -38,6 +48,7 @@ public class AuthenticationUseCaseTests
         Assert.Equal("token-for-1-User", session.Result.AccessToken);
         Assert.Equal(FakeAccessTokenGenerator.ExpiresAtUtc, session.Result.ExpiresAtUtc);
         Assert.Equal("ali@example.com", session.Result.User.Email);
+        Assert.Equal(1, _unitOfWork.SaveChangesCount);
     }
 
     [Fact]
@@ -45,9 +56,9 @@ public class AuthenticationUseCaseTests
     {
         RegisterWithPasswordUseCase useCase = CreateRegisterUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new RegisterWithPasswordCommand { Email = "ali@example.com", DisplayName = "Ali", Password = "Sifre1234" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         RefreshToken storedToken = Assert.Single(_refreshTokenRepository.RefreshTokens);
         Assert.Equal("refresh-1", session.RefreshToken);
@@ -64,10 +75,10 @@ public class AuthenticationUseCaseTests
             User.RegisterWithPassword("ali@example.com", "Ali", "hashed:Sifre1234"));
         RegisterWithPasswordUseCase useCase = CreateRegisterUseCase();
 
-        await Assert.ThrowsAsync<EmailAlreadyRegisteredException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new RegisterWithPasswordCommand { Email = "ALI@example.com", DisplayName = "Başka Ali", Password = "Sifre1234" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Conflict);
 
         Assert.Single(_userRepository.Users);
         Assert.Empty(_refreshTokenRepository.RefreshTokens);
@@ -81,10 +92,10 @@ public class AuthenticationUseCaseTests
     {
         RegisterWithPasswordUseCase useCase = CreateRegisterUseCase();
 
-        await Assert.ThrowsAsync<RequestValidationException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new RegisterWithPasswordCommand { Email = "ali@example.com", DisplayName = "Ali", Password = password },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Validation);
 
         Assert.Empty(_userRepository.Users);
     }
@@ -94,9 +105,9 @@ public class AuthenticationUseCaseTests
     {
         RegisterWithPasswordUseCase useCase = CreateRegisterUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new RegisterWithPasswordCommand { Email = "patron@example.com", DisplayName = "Patron", Password = "Sifre1234" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.Equal(UserRole.User, session.Result.User.Role);
     }
@@ -108,9 +119,9 @@ public class AuthenticationUseCaseTests
             User.RegisterWithPassword("ali@example.com", "Ali", "hashed:Sifre1234"));
         LoginWithPasswordUseCase useCase = CreateLoginUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new LoginWithPasswordCommand { Email = " ALI@example.com ", Password = "Sifre1234" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.Equal("token-for-1-User", session.Result.AccessToken);
         Assert.Equal("ali@example.com", session.Result.User.Email);
@@ -124,14 +135,14 @@ public class AuthenticationUseCaseTests
             User.RegisterWithPassword("ali@example.com", "Ali", "hashed:Sifre1234"));
         LoginWithPasswordUseCase useCase = CreateLoginUseCase();
 
-        AuthenticationFailedException wrongPassword = await Assert.ThrowsAsync<AuthenticationFailedException>(
+        AppError wrongPassword = await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithPasswordCommand { Email = "ali@example.com", Password = "YanlisSifre1" },
-                TestContext.Current.CancellationToken));
-        AuthenticationFailedException unknownEmail = await Assert.ThrowsAsync<AuthenticationFailedException>(
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
+        AppError unknownEmail = await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithPasswordCommand { Email = "kimse@example.com", Password = "Sifre1234" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
 
         Assert.Equal(wrongPassword.Message, unknownEmail.Message);
         Assert.Empty(_refreshTokenRepository.RefreshTokens);
@@ -142,10 +153,10 @@ public class AuthenticationUseCaseTests
     {
         LoginWithPasswordUseCase useCase = CreateLoginUseCase();
 
-        await Assert.ThrowsAsync<AuthenticationFailedException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithPasswordCommand { Email = "kimse@example.com", Password = "Sifre1234" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
 
         Assert.Equal(1, _passwordHasher.HashCallCount);
     }
@@ -157,10 +168,10 @@ public class AuthenticationUseCaseTests
             User.RegisterWithGoogle("ayse@gmail.com", "Ayşe", "google-subject-1", UserRole.User));
         LoginWithPasswordUseCase useCase = CreateLoginUseCase();
 
-        await Assert.ThrowsAsync<AuthenticationFailedException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithPasswordCommand { Email = "ayse@gmail.com", Password = "Sifre1234" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
     }
 
     [Fact]
@@ -175,6 +186,7 @@ public class AuthenticationUseCaseTests
             TestContext.Current.CancellationToken);
 
         Assert.Equal("hashed:Sifre1234", existingUser.PasswordHash);
+        Assert.Equal(1, _unitOfWork.SaveChangesCount);
     }
 
     [Fact]
@@ -185,9 +197,9 @@ public class AuthenticationUseCaseTests
             new GoogleUserInfo("google-subject-1", "Ayse@Gmail.com", isEmailVerified: true, "Ayşe Yılmaz"));
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new LoginWithGoogleCommand { IdToken = "valid-google-token" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         User savedUser = Assert.Single(_userRepository.Users);
         Assert.Equal("ayse@gmail.com", savedUser.Email);
@@ -196,6 +208,7 @@ public class AuthenticationUseCaseTests
         Assert.False(savedUser.HasPassword);
         Assert.True(session.Result.User.HasGoogleLogin);
         Assert.Equal("token-for-1-User", session.Result.AccessToken);
+        Assert.Equal(1, _unitOfWork.SaveChangesCount);
         Assert.Equal(savedUser.Id, Assert.Single(_refreshTokenRepository.RefreshTokens).UserId);
     }
 
@@ -209,9 +222,9 @@ public class AuthenticationUseCaseTests
             new GoogleUserInfo("google-subject-1", "ayse@gmail.com", isEmailVerified: true, "Ayşe"));
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new LoginWithGoogleCommand { IdToken = "valid-google-token" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.Single(_userRepository.Users);
         Assert.Equal(1, session.Result.User.Id);
@@ -227,9 +240,9 @@ public class AuthenticationUseCaseTests
             new GoogleUserInfo("google-subject-1", "ali@gmail.com", isEmailVerified: true, "Ali"));
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase();
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new LoginWithGoogleCommand { IdToken = "valid-google-token" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.Single(_userRepository.Users);
         Assert.Equal("google-subject-1", existingUser.GoogleSubjectId);
@@ -245,9 +258,9 @@ public class AuthenticationUseCaseTests
             new GoogleUserInfo("google-subject-1", "patron@gmail.com", isEmailVerified: true, "Patron"));
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase("patron@gmail.com");
 
-        AuthSession session = await useCase.ExecuteAsync(
+        AuthSession session = TestResults.Success(await useCase.ExecuteAsync(
             new LoginWithGoogleCommand { IdToken = "valid-google-token" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.Equal(UserRole.Admin, session.Result.User.Role);
     }
@@ -255,9 +268,9 @@ public class AuthenticationUseCaseTests
     [Fact]
     public async Task GoogleLogin_LocksOutSomeoneWhoRegisteredTheOwnersEmailFirst()
     {
-        AuthSession attackerSession = await CreateRegisterUseCase().ExecuteAsync(
+        AuthSession attackerSession = TestResults.Success(await CreateRegisterUseCase().ExecuteAsync(
             new RegisterWithPasswordCommand { Email = "patron@gmail.com", DisplayName = "Saldırgan", Password = "Saldirgan123" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
         _googleTokenValidator.AddValidToken(
             "owner-google-token",
             new GoogleUserInfo("google-subject-1", "patron@gmail.com", isEmailVerified: true, "Patron"));
@@ -265,18 +278,18 @@ public class AuthenticationUseCaseTests
         Assert.Equal(UserRole.User, attackerSession.Result.User.Role);
         RefreshToken attackerToken = Assert.Single(_refreshTokenRepository.RefreshTokens);
 
-        AuthSession ownerSession = await CreateGoogleLoginUseCase("patron@gmail.com").ExecuteAsync(
+        AuthSession ownerSession = TestResults.Success(await CreateGoogleLoginUseCase("patron@gmail.com").ExecuteAsync(
             new LoginWithGoogleCommand { IdToken = "owner-google-token" },
-            TestContext.Current.CancellationToken);
+            TestContext.Current.CancellationToken));
 
         Assert.True(attackerToken.IsRevoked);
         Assert.Equal(UserRole.Admin, ownerSession.Result.User.Role);
         Assert.False(ownerSession.Result.User.HasPassword);
 
-        await Assert.ThrowsAsync<AuthenticationFailedException>(
+        await TestResults.FailureAsync(
             () => CreateLoginUseCase().ExecuteAsync(
                 new LoginWithPasswordCommand { Email = "patron@gmail.com", Password = "Saldirgan123" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
     }
 
     [Fact]
@@ -284,10 +297,10 @@ public class AuthenticationUseCaseTests
     {
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase();
 
-        await Assert.ThrowsAsync<AuthenticationFailedException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithGoogleCommand { IdToken = "forged-token" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
 
         Assert.Empty(_userRepository.Users);
     }
@@ -300,10 +313,10 @@ public class AuthenticationUseCaseTests
             new GoogleUserInfo("google-subject-1", "ali@gmail.com", isEmailVerified: false, "Ali"));
         LoginWithGoogleUseCase useCase = CreateGoogleLoginUseCase();
 
-        await Assert.ThrowsAsync<AuthenticationFailedException>(
+        await TestResults.FailureAsync(
             () => useCase.ExecuteAsync(
                 new LoginWithGoogleCommand { IdToken = "unverified-token" },
-                TestContext.Current.CancellationToken));
+                TestContext.Current.CancellationToken), ErrorKind.Unauthorized);
 
         Assert.Empty(_userRepository.Users);
     }
@@ -313,11 +326,11 @@ public class AuthenticationUseCaseTests
     {
         _userRepository.AddExistingUser(
             User.RegisterWithPassword("ali@example.com", "Ali", "hashed:Sifre1234"));
-        GetCurrentUserUseCase useCase = new GetCurrentUserUseCase(
-            _userRepository,
-            new FakeCurrentUser(1, isAdmin: false));
+        GetCurrentUserUseCase useCase = new GetCurrentUserUseCase(_userRepository,
+            new FakeCurrentUser(1, isAdmin: false),
+            TestUseCasePipelines.ForGetCurrentUser());
 
-        var result = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        var result = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.NotNull(result);
         Assert.Equal("ali@example.com", result.Email);
@@ -330,12 +343,13 @@ public class AuthenticationUseCaseTests
             User.RegisterWithPassword("ali@example.com", "Ali", "hashed:Sifre1234"));
         _userRepository.AddExistingUser(
             User.RegisterWithGoogle("ayse@gmail.com", "Ayşe", "google-subject-1", UserRole.Admin));
-        GetUsersUseCase useCase = new GetUsersUseCase(_userRepository);
+        GetUsersUseCase useCase = new GetUsersUseCase(_userRepository,
+            TestUseCasePipelines.ForGetUsers());
 
-        var results = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        var results = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
         Assert.Collection(
-            results,
+            results.Items,
             first => Assert.Equal("ali@example.com", first.Email),
             second => Assert.Equal(UserRole.Admin, second.Role));
         Assert.Null(typeof(UserDto).GetProperty("PasswordHash"));
@@ -353,31 +367,31 @@ public class AuthenticationUseCaseTests
 
     private RegisterWithPasswordUseCase CreateRegisterUseCase()
     {
-        return new RegisterWithPasswordUseCase(
+        return new RegisterWithPasswordUseCase(_unitOfWork,
             _userRepository,
             _passwordHasher,
             CreateSessionIssuer(),
-            new RegisterWithPasswordCommandValidator());
+            TestUseCasePipelines.ForRegisterWithPassword(new RegisterWithPasswordCommandValidator()));
     }
 
     private LoginWithPasswordUseCase CreateLoginUseCase()
     {
-        return new LoginWithPasswordUseCase(
+        return new LoginWithPasswordUseCase(_unitOfWork,
             _userRepository,
             _passwordHasher,
             CreateSessionIssuer(),
-            new LoginWithPasswordCommandValidator());
+            TestUseCasePipelines.ForLoginWithPassword(new LoginWithPasswordCommandValidator()));
     }
 
     private LoginWithGoogleUseCase CreateGoogleLoginUseCase(params string[] adminEmails)
     {
-        return new LoginWithGoogleUseCase(
+        return new LoginWithGoogleUseCase(_unitOfWork,
             _userRepository,
             _refreshTokenRepository,
             _googleTokenValidator,
             new FakeRoleAssignmentPolicy(adminEmails),
             CreateSessionIssuer(),
-            new LoginWithGoogleCommandValidator(),
+            TestUseCasePipelines.ForLoginWithGoogle(new LoginWithGoogleCommandValidator()),
             _timeProvider);
     }
 }

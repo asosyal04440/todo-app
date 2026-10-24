@@ -32,6 +32,19 @@ public class TodoItemDto
         _priority = todoItem.Priority;
     }
 
+    public TodoItemDto(int id, int todoListId, string title, string? description,
+        bool isCompleted, DateTime createdAtUtc, DateTime? dueAtUtc, TodoPriority priority)
+    {
+        _id = id;
+        _todoListId = todoListId;
+        _title = title;
+        _description = description;
+        _isCompleted = isCompleted;
+        _createdAtUtc = createdAtUtc;
+        _dueAtUtc = dueAtUtc;
+        _priority = priority;
+    }
+
     public int Id
     {
         get

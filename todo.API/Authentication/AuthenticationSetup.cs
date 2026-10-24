@@ -2,29 +2,28 @@ using System.Text;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using Microsoft.IdentityModel.Tokens;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Domain.Enums;
 using TodoApi.Infrastructure.Services.Authentication;
+using TodoApi.Application.Abstractions.Persistence;
 
 namespace TodoApi.API.Authentication;
 
 public static class AuthenticationSetup
 {
-    private const int DefaultAuthenticationRequestsPerMinute = 10;
-
     public static IServiceCollection AddTodoAuthentication(
-        this IServiceCollection services,
-        IConfiguration configuration)
+        this IServiceCollection services)
     {
-        JwtSettings jwtSettings = JwtSettings.FromConfiguration(configuration);
-        int authenticationRequestsPerMinute = ReadAuthenticationRequestsPerMinute(configuration);
-        byte[] signingKeyBytes = Encoding.UTF8.GetBytes(jwtSettings.SigningKey);
-
-        services
-            .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IOptions<JwtOptions>>((options, configuredJwt) =>
             {
+                JwtOptions jwtSettings = configuredJwt.Value;
+                byte[] signingKeyBytes = Encoding.UTF8.GetBytes(jwtSettings.SigningKey);
                 options.MapInboundClaims = false;
 
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -41,6 +40,21 @@ public static class AuthenticationSetup
                     NameClaimType = "name",
                     RoleClaimType = JwtAccessTokenGenerator.RoleClaimType
                 };
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        string? subject = context.Principal?.FindFirst("sub")?.Value;
+                        if (!int.TryParse(subject, out int userId) || userId <= 0)
+                        {
+                            context.Fail("The account is unavailable.");
+                            return;
+                        }
+                        var users = context.HttpContext.RequestServices.GetRequiredService<IUserRepository>();
+                        if (await users.GetByIdAsync(userId, context.HttpContext.RequestAborted) == null)
+                            context.Fail("The account is unavailable.");
+                    }
+                };
             });
 
         services.AddAuthorization(options =>
@@ -56,10 +70,10 @@ public static class AuthenticationSetup
             });
         });
 
-        services.AddRateLimiter(options =>
+        services.AddRateLimiter(options => options.RejectionStatusCode = StatusCodes.Status429TooManyRequests);
+        services.AddOptions<RateLimiterOptions>().Configure<IOptions<SecurityOptions>>((options, configuredSecurity) =>
         {
-            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-
+            int authenticationRequestsPerMinute = configuredSecurity.Value.AuthenticationRequestsPerMinute;
             options.AddPolicy(RateLimitingPolicies.Authentication, httpContext =>
             {
                 string clientAddress = httpContext.Connection.RemoteIpAddress?.ToString() ?? "unknown";
@@ -79,25 +93,5 @@ public static class AuthenticationSetup
         services.AddScoped<ICurrentUser, HttpContextCurrentUser>();
 
         return services;
-    }
-
-    private static int ReadAuthenticationRequestsPerMinute(IConfiguration configuration)
-    {
-        string? configuredValue = configuration["Security:AuthenticationRequestsPerMinute"];
-
-        if (string.IsNullOrWhiteSpace(configuredValue))
-        {
-            return DefaultAuthenticationRequestsPerMinute;
-        }
-
-        bool isNumber = int.TryParse(configuredValue, out int requestsPerMinute);
-
-        if (isNumber == false || requestsPerMinute <= 0)
-        {
-            throw new InvalidOperationException(
-                "The Security:AuthenticationRequestsPerMinute setting must be a positive whole number.");
-        }
-
-        return requestsPerMinute;
     }
 }

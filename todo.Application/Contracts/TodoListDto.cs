@@ -21,6 +21,13 @@ public class TodoListDto
         _createdAtUtc = todoList.CreatedAtUtc;
     }
 
+    public TodoListDto(int id, string name, DateTime createdAtUtc)
+    {
+        _id = id;
+        _name = name;
+        _createdAtUtc = createdAtUtc;
+    }
+
     public int Id
     {
         get

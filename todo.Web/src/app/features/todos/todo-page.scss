@@ -1,0 +1,51 @@
+.eyebrow {
+  margin: 0;
+}
+
+.welcome-card h2 {
+  margin: 0;
+  color: #26362e;
+}
+
+.eyebrow {
+  color: #91a097;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.welcome-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.welcome-card h2 {
+  font-size: 17px;
+}
+
+.welcome-card > p:not(.eyebrow) {
+  margin: 7px 0 17px;
+  color: #89948d;
+  font-size: 13px;
+}
+
+.welcome-card {
+  min-height: 400px;
+  justify-content: center;
+  padding: 50px 20px;
+  background: linear-gradient(135deg, #f6f9f6, #f2f7f3);
+  border: 1px solid #e9f0eb;
+  border-radius: 18px;
+}
+
+.welcome-card h2 {
+  margin-top: 12px;
+  font-size: 23px;
+}
+
+.welcome-card > p:not(.eyebrow) {
+  max-width: 320px;
+  line-height: 1.6;
+}

@@ -1,0 +1,175 @@
+.eyebrow,
+.due-date {
+  margin: 0;
+}
+
+.todo-card,
+.todo-card-main,
+.todo-actions,
+.todo-metadata {
+  display: flex;
+  align-items: center;
+}
+
+.todo-card {
+  justify-content: space-between;
+}
+
+.todo-copy h3 {
+  margin: 0;
+  color: #26362e;
+}
+
+.eyebrow {
+  color: #91a097;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+}
+
+.todo-actions {
+  gap: 8px;
+}
+
+.todo-card {
+  min-height: 92px;
+  gap: 20px;
+  padding: 17px 19px;
+  background: #fff;
+  border: 1px solid #e9eeea;
+  border-radius: 13px;
+  transition:
+    border-color 150ms ease,
+    box-shadow 150ms ease;
+}
+
+.todo-card:hover {
+  border-color: #d6e3d9;
+  box-shadow: 0 6px 18px rgb(35 53 45 / 4%);
+}
+
+.todo-card-main {
+  min-width: 0;
+  flex: 1;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.completion-control {
+  position: relative;
+  display: inline-grid;
+  flex: 0 0 21px;
+  width: 21px;
+  height: 21px;
+  margin-top: 2px;
+  cursor: pointer;
+}
+
+.completion-control input {
+  position: absolute;
+  width: 21px;
+  height: 21px;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.custom-checkbox {
+  display: grid;
+  place-items: center;
+  width: 21px;
+  height: 21px;
+  background: #fff;
+  border: 1.5px solid #c7d2ca;
+  border-radius: 7px;
+  transition: all 130ms ease;
+}
+
+.completion-control input:checked + .custom-checkbox {
+  background: #39765e;
+  border-color: #39765e;
+}
+
+.completion-control input:checked + .custom-checkbox::after {
+  width: 5px;
+  height: 9px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  content: '';
+  transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.completion-control input:focus-visible + .custom-checkbox {
+  outline: 3px solid #c8dfd0;
+  outline-offset: 2px;
+}
+
+.todo-copy {
+  min-width: 0;
+}
+
+.todo-copy h3 {
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.todo-copy > p {
+  margin: 5px 0 0;
+  color: #859189;
+  font-size: 12px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.todo-metadata {
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.todo-metadata nz-tag {
+  margin: 0;
+  border-radius: 6px;
+  font-size: 10px;
+}
+
+.due-date {
+  color: #8a958d;
+  font-size: 11px;
+}
+
+.todo-completed .todo-copy h3 {
+  color: #9ba59e;
+  text-decoration: line-through;
+}
+
+.todo-completed .todo-copy > p {
+  color: #a7b0aa;
+}
+
+.todo-actions {
+  flex: 0 0 auto;
+}
+
+.todo-actions button {
+  border-radius: 8px;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .todo-card {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .todo-actions {
+    align-self: flex-end;
+  }
+}
+:host,
+app-todo-form {
+  display: block;
+  width: 100%;
+}

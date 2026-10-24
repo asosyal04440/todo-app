@@ -47,14 +47,14 @@ public static class BackgroundJobsSetup
 
     public static WebApplication UseTodoBackgroundJobs(this WebApplication app)
     {
-        if (AreRemindersEnabled(app.Configuration) == false)
+        ReminderSettings reminderSettings = app.Services.GetRequiredService<ReminderSettings>();
+        if (reminderSettings.IsEnabled == false)
         {
             return app;
         }
 
         IRecurringJobManager recurringJobs = app.Services.GetRequiredService<IRecurringJobManager>();
         IEmailSender emailSender = app.Services.GetRequiredService<IEmailSender>();
-        ReminderSettings reminderSettings = app.Services.GetRequiredService<ReminderSettings>();
         ILogger logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger(nameof(BackgroundJobsSetup));
 
         if (emailSender.IsConfigured)

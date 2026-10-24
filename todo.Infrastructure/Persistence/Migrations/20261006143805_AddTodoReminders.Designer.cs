@@ -15,7 +15,6 @@ namespace TodoApi.Infrastructure.Persistence.Migrations
     [Migration("20261006143805_AddTodoReminders")]
     partial class AddTodoReminders
     {
-        /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618

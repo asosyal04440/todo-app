@@ -1,27 +1,30 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
-using FluentValidation;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Application.Authorization;
-using TodoApi.Application.Common.Validation;
 using TodoApi.Application.Contracts;
 using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Todos.CreateTodo;
 
-public class CreateTodoUseCase
+public class CreateTodoUseCase : UseCase<CreateTodoCommand, TodoItemDto>
 {
+    private readonly IUnitOfWork _unitOfWork;
     private readonly ITodoListRepository _todoListRepository;
     private readonly ICurrentUser _currentUser;
-    private readonly IValidator<CreateTodoCommand> _validator;
 
     public CreateTodoUseCase(
+        IUnitOfWork unitOfWork,
         ITodoListRepository todoListRepository,
         ICurrentUser currentUser,
-        IValidator<CreateTodoCommand> validator)
+        UseCasePipeline<CreateTodoCommand, TodoItemDto> pipeline) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (todoListRepository == null)
         {
             throw new ArgumentNullException(nameof(todoListRepository));
@@ -32,36 +35,28 @@ public class CreateTodoUseCase
             throw new ArgumentNullException(nameof(currentUser));
         }
 
-        if (validator == null)
-        {
-            throw new ArgumentNullException(nameof(validator));
-        }
-
+        _unitOfWork = unitOfWork;
         _todoListRepository = todoListRepository;
         _currentUser = currentUser;
-        _validator = validator;
     }
 
-    public async Task<TodoItemDto?> ExecuteAsync(
-        CreateTodoCommand command,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<TodoItemDto>> HandleAsync(
+        CreateTodoCommand command, CancellationToken cancellationToken)
     {
-        await _validator.ValidateOrThrowAsync(command, cancellationToken);
-
         TodoList? todoList = await _todoListRepository.GetByIdWithTodosAsync(
             command.TodoListId,
             cancellationToken);
 
         if (todoList == null)
         {
-            return null;
+            return Result<TodoItemDto>.Failure(AppErrors.ListNotFound);
         }
 
         bool canAccessTodoList = TodoListAccessPolicy.CanAccess(todoList, _currentUser);
 
         if (canAccessTodoList == false)
         {
-            return null;
+            return Result<TodoItemDto>.Failure(AppErrors.AccessDenied);
         }
 
         TodoItem newTodo = todoList.AddTodo(
@@ -70,10 +65,10 @@ public class CreateTodoUseCase
             command.DueAtUtc,
             command.Priority);
 
-        await _todoListRepository.SaveChangesAsync(cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         TodoItemDto response = new TodoItemDto(newTodo);
 
-        return response;
+        return Result<TodoItemDto>.Success(response);
     }
 }

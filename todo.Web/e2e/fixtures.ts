@@ -40,18 +40,11 @@ export async function registerUser(
   return { email, password, displayName, ...result };
 }
 
-export async function useApiUrl(page: Page): Promise<void> {
-  await page.addInitScript((configuredApiUrl: string) => {
-    window.__TODO_API_URL__ = configuredApiUrl;
-  }, apiUrl);
-}
-
 async function authenticateInBrowser(
   page: Page,
   endpoint: 'register' | 'login',
   body: Record<string, string>,
 ): Promise<Omit<AuthSession, 'email' | 'password' | 'displayName'>> {
-  await useApiUrl(page);
   await page.goto('/login');
 
   const result = await page.evaluate(
@@ -65,7 +58,7 @@ async function authenticateInBrowser(
 
       return { status: response.status, body: await response.json() };
     },
-    { url: `${apiUrl}/auth/${endpoint}`, payload: body, headers: clientHeaders },
+    { url: `/api/auth/${endpoint}`, payload: body, headers: clientHeaders },
   );
 
   expect([200, 201]).toContain(result.status);

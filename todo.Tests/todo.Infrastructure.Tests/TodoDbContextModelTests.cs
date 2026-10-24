@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using TodoApi.Application.Exceptions;
 using TodoApi.Domain.Entities;
 using TodoApi.Infrastructure.Persistence;
@@ -8,6 +9,14 @@ namespace todo.Infrastructure.Tests;
 
 public class TodoDbContextModelTests
 {
+    [Fact]
+    public void Model_HasNoPendingSchemaChanges()
+    {
+        using TodoDbContext dbContext = CreateDbContext();
+
+        Assert.False(dbContext.Database.HasPendingModelChanges());
+    }
+
     [Fact]
     public void Model_MapsListsAndTodosToTheirTables()
     {
@@ -140,7 +149,7 @@ public class TodoDbContextModelTests
         Assert.Equal(64, tokenHash.GetMaxLength());
         Assert.True(tokenHashIndex.IsUnique);
         Assert.Equal(typeof(User), userRelationship.PrincipalEntityType.ClrType);
-        Assert.Equal(DeleteBehavior.Cascade, userRelationship.DeleteBehavior);
+        Assert.Equal(DeleteBehavior.ClientNoAction, userRelationship.DeleteBehavior);
     }
 
     [Fact]
@@ -148,7 +157,7 @@ public class TodoDbContextModelTests
     {
         using TodoDbContext dbContext = CreateDbContext();
 
-        IIndex index = FindIndex(dbContext, typeof(TodoItem), nameof(TodoItem.TodoListId), nameof(TodoItem.Title));
+        IIndex index = FindIndex(dbContext, typeof(TodoItem), nameof(TodoItem.TodoListId), nameof(TodoItem.NormalizedTitle));
 
         Assert.True(index.IsUnique);
     }
@@ -158,7 +167,7 @@ public class TodoDbContextModelTests
     {
         using TodoDbContext dbContext = CreateDbContext();
 
-        IIndex index = FindIndex(dbContext, typeof(TodoList), nameof(TodoList.OwnerUserId), nameof(TodoList.Name));
+        IIndex index = FindIndex(dbContext, typeof(TodoList), nameof(TodoList.OwnerUserId), nameof(TodoList.NormalizedName));
 
         Assert.True(index.IsUnique);
     }
@@ -174,6 +183,20 @@ public class TodoDbContextModelTests
         var executionStrategy = dbContext.Database.CreateExecutionStrategy();
 
         Assert.True(executionStrategy.RetriesOnFailure);
+    }
+
+    [Fact]
+    public void Model_UsesBinaryRequiredKeysForNameEquality()
+    {
+        using TodoDbContext dbContext = CreateDbContext();
+        IModel model = dbContext.GetService<IDesignTimeModel>().Model;
+        IProperty name = model.FindEntityType(typeof(TodoList))!.FindProperty(nameof(TodoList.NormalizedName))!;
+        IProperty title = model.FindEntityType(typeof(TodoItem))!.FindProperty(nameof(TodoItem.NormalizedTitle))!;
+
+        Assert.False(name.IsNullable);
+        Assert.False(title.IsNullable);
+        Assert.Equal("Latin1_General_100_BIN2", name.GetCollation());
+        Assert.Equal("Latin1_General_100_BIN2", title.GetCollation());
     }
 
     [Theory]

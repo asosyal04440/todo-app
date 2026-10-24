@@ -1,0 +1,49 @@
+Arka plan hatırlatma işinin hazırlanması
+
+1. Program.cs → builder.Services.AddTodoBackgroundJobs(builder.Configuration).
+2. BackgroundJobsSetup.cs → AddTodoBackgroundJobs(...) → hatırlatmalar açıksa AddHangfire(...) ve UseSqlServerStorage(...) ile Hangfire hazırlanır.
+3. services.AddHangfireServer(...) → API içinde işleri çalıştıracak iki worker başlatılır.
+4. Program.cs → app.UseTodoBackgroundJobs().
+5. BackgroundJobsSetup.cs → UseTodoBackgroundJobs(...) → ReminderSettings ve emailSender.IsConfigured kontrol edilir.
+6. Ayarlar uygunsa recurringJobs.AddOrUpdate<TodoReminderJob>(...) → job => job.RunAsync(...) zamanlanır.
+7. appsettings.json → Reminders:Schedule = */5 * * * *; mevcut temel ayarla iş her 5 dakikada bir planlanır.
+8. Hatırlatmalar kapalıysa iş kurulmaz; SMTP yapılandırılmamışsa recurringJobs.RemoveIfExists(...) ile tekrarlayan iş kaldırılır.
+
+
+Görevi bulma, e-posta gönderme ve sonucu kaydetme
+
+1. Hangfire → işin zamanı geldiğinde TodoReminderJob.cs içindeki RunAsync(...) çalıştırılır.
+2. RunAsync(...) → _sendDueTodoRemindersUseCase.ExecuteAsync(cancellationToken).
+3. SendDueTodoRemindersUseCase.cs → ExecuteAsync(...) → base.ExecuteAsync(...).
+4. Decorator sırası: LoggingDecorator → ExpectedErrorDecorator → ValidationDecorator → HandleAsync(...).
+5. HandleAsync(...) → _timeProvider.GetUtcNow() ile şimdiki zaman alınır.
+6. new TodoReminderSpecification(...) → hatırlatma aralığı ve tekrar deneme kuralları hazırlanır.
+7. appsettings.json temel ayarları: LeadTimeHours = 24, BatchSize = 50, MaximumAttempts = 3, RetryDelayMinutes = 15.
+8. _todoReminderRepository.GetTodosDueForReminderAsync(...) → TodoReminderRepository.cs.
+9. specification.ToExpression() → tamamlanmamış, silinmemiş, süresi geçmemiş, zamanı yaklaşmış ve henüz hatırlatması gönderilmemiş görevler filtrelenir; tekrar deneme koşulları da uygulanır.
+10. TodoReminderRepository.cs → TodoItems, TodoLists ve Users birleştirilir; görev sahibinin e-postası alınır.
+11. orderby todo.DueAtUtc → Take(maxCount) → ToListAsync(...) → EF Core → SQL Server.
+12. TodoReminderCandidate listesi use case'e döner; candidates gönderilmeye aday görevlerdir.
+13. foreach (TodoReminderCandidate candidate in candidates) → her aday sırayla işlenir.
+14. specification.IsSatisfiedBy(todo) → görev hâlâ kurallara uygun mu kontrol edilir; uygun değilse continue.
+15. TodoReminderEmailComposer.Compose(...) → alıcı, konu ve e-posta gövdesi hazırlanır.
+16. _emailSender.SendAsync(message, cancellationToken) → MailKitEmailSender.cs içindeki SendAsync(...).
+17. new MimeMessage() → gönderen, alıcı, konu ve gövde SMTP mesajına çevrilir.
+18. smtpClient.ConnectAsync(...) → gerekiyorsa smtpClient.AuthenticateAsync(...).
+19. smtpClient.SendAsync(mimeMessage, cancellationToken) → SMTP sunucusuna gönderilir → smtpClient.DisconnectAsync(...).
+20. Use case'e dönülür → todo.MarkReminderSent(...) ile gönderilme zamanı işaretlenir.
+21. _unitOfWork.SaveChangesAsync(...) → EfUnitOfWork → TodoDbContext → EF Core → SQL Server; hatırlatma durumu kaydedilir.
+22. sentCount++ → sıradaki adaya geçilir.
+23. new ReminderRunResult(...) → aday sayısı, gönderilen sayısı ve hatalar sonuç olarak hazırlanır.
+24. TodoReminderJob.cs → RunAsync(...) sonucu alır ve _logger.LogInformation(...) ile sayıları loglar.
+25. Hangfire işin çalışma durumunu saklar; Development ortamında /hangfire ekranından görülebilir.
+
+
+Gönderim başarısız olursa
+
+1. Tek mesajla ilgili hata → todo.RecordFailedReminderAttempt(...) → _unitOfWork.SaveChangesAsync(...); diğer adaylara devam edilir.
+2. Deneme sayısı MaximumAttempts değerinden küçükse ve RetryDelay süresi geçmişse görev sonraki çalışmalarda yeniden aday olabilir.
+3. EmailServiceUnavailableException → emailServiceUnavailable = true → break; o çalışmada kalan adaylara geçilmez.
+4. TodoReminderJob.cs → result.EmailServiceUnavailable durumunda exception fırlatır.
+5. [AutomaticRetry(Attempts = 3)] → başarısız Hangfire çalışması için en fazla üç otomatik tekrar denenir; bu, görev başına deneme sınırından ayrıdır.
+6. Bu akış kullanıcı HTTP isteğiyle başlamaz; Angular'a cevap dönmez. Çıktısı e-posta gönderimi ve veritabanındaki hatırlatma durumudur.

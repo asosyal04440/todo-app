@@ -14,6 +14,53 @@ namespace todo.Application.Tests;
 public class ValidatorTests
 {
     [Theory]
+    [InlineData(120, true)]
+    [InlineData(121, false)]
+    public void CreateTodo_EnforcesTheDomainTitleBoundary(int length, bool expected)
+    {
+        CreateTodoCommand command = new CreateTodoCommand
+        {
+            TodoListId = 1,
+            Title = new string('a', length)
+        };
+
+        ValidationResult result = new CreateTodoCommandValidator(FakeTimeProvider.AtTestStart())
+            .Validate(command);
+
+        Assert.Equal(expected, result.IsValid);
+    }
+
+    [Theory]
+    [InlineData(7, false)]
+    [InlineData(8, true)]
+    [InlineData(128, true)]
+    [InlineData(129, false)]
+    public void Register_EnforcesThePasswordLengthBoundaries(int length, bool expected)
+    {
+        RegisterWithPasswordCommand command = new RegisterWithPasswordCommand
+        {
+            Email = "ali@example.com",
+            DisplayName = "Ali",
+            Password = "a1" + new string('a', length - 2)
+        };
+
+        Assert.Equal(expected, new RegisterWithPasswordCommandValidator().Validate(command).IsValid);
+    }
+
+    [Fact]
+    public void Register_AcceptsAUnicodeLetterAndDecimalDigit()
+    {
+        RegisterWithPasswordCommand command = new RegisterWithPasswordCommand
+        {
+            Email = "ali@example.com",
+            DisplayName = "Ali",
+            Password = "Şifre١٢٣"
+        };
+
+        Assert.True(new RegisterWithPasswordCommandValidator().Validate(command).IsValid);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData("   ")]
     public void CreateTodoList_RejectsAnEmptyName(string name)

@@ -1,0 +1,111 @@
+Görev işlemlerinin ortak geçiş yolu
+
+1. todo.facade.ts → this.todoApi üzerinden HTTP isteği hazırlanır; firstValueFrom(...) veya subscribe() isteği başlatır.
+2. apiErrorInterceptor → authInterceptor; sendWithToken(...) Authorization: Bearer başlığını ekler.
+3. Access token yoksa veya korunan istek 401 dönerse auth.refreshSession() ile yenileme denenir.
+4. Program.cs → UseSecurityHeaders → UseSerilogRequestLogging → Production ortamında UseHsts / UseHttpsRedirection → UseExceptionHandler → UseCors → UseRateLimiter → UseAuthentication → UseAuthorization.
+5. Authentication JWT'yi doğrular; [Authorize] bulunan controller için giriş yapılmış olması gerekir.
+6. Controller → ilgili use case'in ExecuteAsync(...) metodu çağrılır.
+7. Decorator sırası: LoggingDecorator → ExpectedErrorDecorator → ValidationDecorator → ilgili use case'in HandleAsync(...) metodu.
+8. Sonuç decorator'lardan geri döner → ToActionResult(...) HTTP cevabını oluşturur → frontend interceptor'ları → facade → ekran.
+
+
+Görev ekleme
+
+1. todo-form.html → (ngSubmit)="submit()".
+2. todo-form.ts → submit() formu kontrol eder, this.submitted.emit(...) ile alanları iletir.
+3. todo-page.html → (submitted)="facade.createTodo($event)".
+4. todo.facade.ts → createTodo(...) → firstValueFrom(this.todoApi.createTodo(...)).
+5. todo-api.service.ts → createTodo(...) → /todo-lists/{listeId}/todos adresine POST gönderilir.
+6. Ortak interceptor ve middleware yolu geçilir.
+7. TodosController.cs → Create(...) → create.ExecuteAsync(new CreateTodoCommand ...).
+8. Decorator zinciri → CreateTodoUseCase.cs içindeki HandleAsync(...).
+9. _todoListRepository.GetByIdWithTodosAsync(...) → TodoListRepository listeyi görevleriyle getirir.
+10. TodoListAccessPolicy.CanAccess(...) → kullanıcının listeye erişimi kontrol edilir.
+11. todoList.AddTodo(...) → TodoList.cs içinde TodoItem oluşturulur, başlık benzersizliği kontrol edilir ve koleksiyona eklenir.
+12. _unitOfWork.SaveChangesAsync(...) → EfUnitOfWork → _dbContext.SaveChangesAsync(...).
+13. TodoDbContext.cs → ExpandSoftDeletionAsync(...) → PrepareAudit() → base.SaveChangesAsync(...) → EF Core → SQL Server.
+14. CreateTodoUseCase.cs → new TodoItemDto(newTodo) → Result<TodoItemDto>.Success(response).
+15. TodosController.cs → ToActionResult(...) → CreatedAtAction(...) ile 201 cevabı döner.
+16. todo.facade.ts → createTodo(...) içindeki bekleyiş tamamlanır → this.loadTodos(todoListId) ile görevler yeniden okunur.
+17. this.todos.set(page.items) ile signal güncellenir → todo-page.html görevleri gösterir.
+
+
+Görevleri listeleme ve sayfalama
+
+1. todo-page.ts → ngOnInit() → this.facade.loadTodoLists().
+2. todo.facade.ts → loadTodoLists(...) listeleri getirir ve seçilen liste için this.loadTodos(...) çağırır.
+3. loadTodos(...) → this.todoLoads.next(...) → constructor içindeki switchMap(...) → this.fetchTodoPage(...).
+4. fetchTodoPage(...) → this.todoApi.getTodos(listId, pageNumber, this.pageSize).
+5. todo-api.service.ts → getTodos(...) → /todo-lists/{listeId}/todos adresine pageNumber ve pageSize ile GET gönderilir.
+6. Ortak geçiş yolu → TodosController.cs içindeki GetForList(...) → getForList.ExecuteAsync(...).
+7. Decorator zinciri → GetTodosInListUseCase.cs içindeki HandleAsync(...).
+8. queries.GetTodosAsync(...) → TodoReadQueries.cs; erişim kontrol edilir, görev sorgusu hazırlanır.
+9. ReadQueryPaging.ReadPageAsync(...) → EF Core → SQL Server; istenen sayfa ve toplam kayıt bilgisi alınır.
+10. PagedResult<TodoItemDto> → ToActionResult(...) → 200 JSON cevabı.
+11. todo.facade.ts → this.todos.set(page.items) ve sayfa signal'ları güncellenir → ekran yenilenir.
+12. todo-page.html → (pageRequested)="facade.changeTodoPage($event)" → changeTodoPage(...) → loadTodos(...) ile yeni sayfa okunur.
+
+
+Görev güncelleme
+
+1. todo-form.ts → submit() → this.submitted.emit(...) ile yeni alanlar iletilir.
+2. todo-list-view üzerinden updateRequested olayı → todo-page.html içindeki facade.saveTodo($event.todo, $event.request).
+3. todo.facade.ts → saveTodo(...) → firstValueFrom(this.todoApi.updateTodo(...)).
+4. todo-api.service.ts → updateTodo(...) → /todo-lists/{listeId}/todos/{görevId} adresine PUT gönderilir.
+5. Ortak geçiş yolu → TodosController.cs içindeki Update(...) → update.ExecuteAsync(...).
+6. Decorator zinciri → UpdateTodoUseCase.cs içindeki HandleAsync(...).
+7. _todoListRepository.GetByIdWithTodosAsync(...) → TodoListAccessPolicy.CanAccess(...) → görev bulunur.
+8. EnsureAChangedDueDateIsNotInThePast(...) → todoList.RenameTodo(...) → todoToUpdate.ChangeDescription(...) → SetDueAtUtc(...) → ChangePriority(...).
+9. _unitOfWork.SaveChangesAsync(...) → EfUnitOfWork → TodoDbContext → EF Core → SQL Server; güncelleme ve audit bilgisi kaydedilir.
+10. TodoItemDto → ToActionResult(...) → 200 cevabı → saveTodo(...) içindeki this.replaceTodo(updatedTodo).
+11. replaceTodo(...) → this.todos.set(...) ile ekrandaki görev güncellenir.
+
+
+Görevi tamamlandı / tamamlanmadı yapma
+
+1. todo-page.html → (completionRequested)="facade.setTodoCompletion($event.todo, $event.isCompleted)".
+2. todo.facade.ts → setTodoCompletion(...) → this.todoApi.setTodoCompletionStatus(...).
+3. todo-api.service.ts → setTodoCompletionStatus(...) → /todo-lists/{listeId}/todos/{görevId}/completion adresine PATCH gönderilir.
+4. Ortak geçiş yolu → TodosController.cs içindeki SetCompletionStatus(...) → setCompletion.ExecuteAsync(...).
+5. Decorator zinciri → SetTodoCompletionStatusUseCase.cs içindeki HandleAsync(...).
+6. Liste getirilir → TodoListAccessPolicy.CanAccess(...) kontrol edilir → görev bulunur.
+7. todoToUpdate.MarkCompleted() veya todoToUpdate.MarkIncomplete() çalışır.
+8. _unitOfWork.SaveChangesAsync(...) → veritabanına kaydedilir → TodoItemDto ile 200 cevabı döner.
+9. todo.facade.ts → this.replaceTodo(updatedTodo) → ekrandaki durum güncellenir.
+
+
+Görev silme
+
+1. todo-page.html → (deleteRequested)="facade.deleteTodo($event)".
+2. todo.facade.ts → deleteTodo(...) → firstValueFrom(this.todoApi.deleteTodo(...)).
+3. todo-api.service.ts → deleteTodo(...) → /todo-lists/{listeId}/todos/{görevId} adresine DELETE gönderilir.
+4. Ortak geçiş yolu → TodosController.cs içindeki Delete(...) → delete.ExecuteAsync(...).
+5. Decorator zinciri → DeleteTodoUseCase.cs içindeki HandleAsync(...).
+6. _todoListRepository.GetByIdWithTodosAsync(...) → TodoListAccessPolicy.CanAccess(...) → todoList.RemoveTodo(todoId).
+7. _unitOfWork.SaveChangesAsync(...) → TodoDbContext silme işlemini soft delete'e çevirir; IsDeleted, silen kişi, silinme zamanı ve audit kaydedilir.
+8. TodosController.cs → ToActionResult(...) → NoContent() ile 204 cevabı döner.
+9. todo.facade.ts → this.loadTodos(todoListId) → silinen görev sorgu filtreleri nedeniyle görünmez.
+
+
+Liste işlemlerinin kısa yolları
+
+1. Liste oluşturma: todo-page.html → facade.createList($event) → todo.facade.ts içindeki createList(...) → this.todoApi.createTodoList(...) → POST /todo-lists.
+2. TodoListsController.cs → Create(...) → create.ExecuteAsync(...) → CreateTodoListUseCase.cs içindeki HandleAsync(...) → SaveChangesAsync(...) → 201 cevabı.
+3. todo.facade.ts → this.loadTodoLists(createdList.id) → yeni liste seçilir ve görevleri okunur.
+4. Listeleri okuma: loadTodoLists(...) → this.todoApi.getTodoLists(...) → GET /todo-lists → TodoListsController.cs içindeki GetAll(...).
+5. getAll.ExecuteAsync(...) → GetTodoListsUseCase.cs içindeki HandleAsync(...) → queries.GetListsAsync(...) → TodoReadQueries.cs → sayfalı 200 cevabı → this.todoLists.set(page.items).
+6. Liste adı değiştirme: facade.saveListName($event) → saveListName(...) → this.todoApi.renameTodoList(...) → PUT /todo-lists/{listeId}.
+7. TodoListsController.cs → Rename(...) → rename.ExecuteAsync(...) → RenameTodoListUseCase.cs içindeki HandleAsync(...) → SaveChangesAsync(...) → 200 cevabı.
+8. todo.facade.ts → this.selectedList.set(renamedList) ve this.todoLists.set(...) ile ekran güncellenir.
+9. Liste silme: facade.deleteList() → deleteList() → this.todoApi.deleteTodoList(...) → DELETE /todo-lists/{listeId}.
+10. TodoListsController.cs → Delete(...) → delete.ExecuteAsync(...) → DeleteTodoListUseCase.cs içindeki HandleAsync(...) → SaveChangesAsync(...).
+11. TodoDbContext listeyi ve bağlı görevleri soft delete yapar → NoContent() ile 204 cevabı → this.loadTodoLists() ile ekran yenilenir.
+12. Bu liste istekleri de ortak interceptor, middleware ve decorator yolundan geçer.
+
+
+Hata dönüşü
+
+1. Validation, erişim veya domain kuralı başarısızsa normal başarı yoluna devam edilmez.
+2. Result hataları ToActionResult(...) ile; beklenmeyen exception'lar API exception handler'larıyla HTTP hatasına çevrilir.
+3. api-error.interceptor.ts → errors.normalize(error) → todo.facade.ts içindeki showError(...) → facade.error() üzerinden hata ekranda gösterilir.

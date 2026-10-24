@@ -1,18 +1,19 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
-using TodoApi.Application.Exceptions;
 using TodoApi.Application.Features.Authentication.Common;
 using TodoApi.Domain.Entities;
 
 namespace TodoApi.Application.Features.Authentication.RefreshSession;
 
-public class RefreshSessionUseCase
+public class RefreshSessionUseCase : UseCase<string?, AuthSession>
 {
-    private const string InvalidSessionMessage = "The session has expired. Please sign in again.";
+    private readonly IUnitOfWork _unitOfWork;
 
     private static readonly TimeSpan ConcurrentRefreshGracePeriod = TimeSpan.FromSeconds(30);
 
@@ -23,12 +24,16 @@ public class RefreshSessionUseCase
     private readonly TimeProvider _timeProvider;
 
     public RefreshSessionUseCase(
+        IUnitOfWork unitOfWork,
         IRefreshTokenRepository refreshTokenRepository,
         IUserRepository userRepository,
         ISecureTokenGenerator secureTokenGenerator,
         SessionIssuer sessionIssuer,
-        TimeProvider timeProvider)
+        TimeProvider timeProvider,
+        UseCasePipeline<string?, AuthSession> pipeline) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (refreshTokenRepository == null)
         {
             throw new ArgumentNullException(nameof(refreshTokenRepository));
@@ -54,6 +59,7 @@ public class RefreshSessionUseCase
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
+        _unitOfWork = unitOfWork;
         _refreshTokenRepository = refreshTokenRepository;
         _userRepository = userRepository;
         _secureTokenGenerator = secureTokenGenerator;
@@ -61,13 +67,12 @@ public class RefreshSessionUseCase
         _timeProvider = timeProvider;
     }
 
-    public async Task<AuthSession> ExecuteAsync(
-        string? refreshTokenValue,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<AuthSession>> HandleAsync(
+        string? refreshTokenValue, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(refreshTokenValue))
         {
-            throw new AuthenticationFailedException(InvalidSessionMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidSession);
         }
 
         string tokenHash = _secureTokenGenerator.ComputeHash(refreshTokenValue);
@@ -77,7 +82,7 @@ public class RefreshSessionUseCase
 
         if (storedToken == null)
         {
-            throw new AuthenticationFailedException(InvalidSessionMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidSession);
         }
 
         DateTime nowUtc = _timeProvider.GetUtcNow().UtcDateTime;
@@ -92,26 +97,29 @@ public class RefreshSessionUseCase
             if (wasJustRotated == false)
             {
                 await RevokeAllSessionsAsync(storedToken.UserId, nowUtc, cancellationToken);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
             }
 
-            throw new AuthenticationFailedException(InvalidSessionMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidSession);
         }
 
         if (storedToken.IsActive(nowUtc) == false)
         {
-            throw new AuthenticationFailedException(InvalidSessionMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidSession);
         }
 
         User? user = await _userRepository.GetByIdAsync(storedToken.UserId, cancellationToken);
 
         if (user == null)
         {
-            throw new AuthenticationFailedException(InvalidSessionMessage);
+            return Result<AuthSession>.Failure(AppErrors.InvalidSession);
         }
 
-        AuthSession session = await _sessionIssuer.IssueAsync(user, cancellationToken, storedToken);
+        PendingAuthSession session = await _sessionIssuer.PrepareAsync(user, cancellationToken, storedToken);
 
-        return session;
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result<AuthSession>.Success(_sessionIssuer.CreateSession(session));
     }
 
     private async Task RevokeAllSessionsAsync(
@@ -128,7 +136,5 @@ public class RefreshSessionUseCase
         {
             activeToken.Revoke(nowUtc);
         }
-
-        await _refreshTokenRepository.SaveChangesAsync(cancellationToken);
     }
 }

@@ -1,25 +1,24 @@
 import { Routes } from '@angular/router';
-import { adminGuard, authGuard, guestGuard } from './guards/auth.guards';
-import { AdminUsersPage } from './pages/admin/admin-users-page';
-import { LoginPage } from './pages/login/login-page';
-import { TodoPage } from './pages/todos/todo-page';
+import { adminGuard, authGuard, guestGuard } from './core/auth/auth.guards';
 
 export const routes: Routes = [
   {
     path: 'login',
-    component: LoginPage,
+    loadChildren: () => import('./features/auth/auth.routes').then((module) => module.AUTH_ROUTES),
     canActivate: [guestGuard],
     title: 'Giriş | Todo',
   },
   {
     path: 'admin/users',
-    component: AdminUsersPage,
+    loadChildren: () =>
+      import('./features/admin/admin.routes').then((module) => module.ADMIN_ROUTES),
     canActivate: [adminGuard],
     title: 'Kullanıcılar | Todo',
   },
   {
     path: '',
-    component: TodoPage,
+    loadChildren: () =>
+      import('./features/todos/todos.routes').then((module) => module.TODO_ROUTES),
     canActivate: [authGuard],
     pathMatch: 'full',
     title: 'Todo | Gününü düzenle',

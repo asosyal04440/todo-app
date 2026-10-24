@@ -1,37 +1,41 @@
+using TodoApi.Application.Common.Results;
+using TodoApi.Application.Common.Execution;
 using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
-using FluentValidation;
 using TodoApi.Application.Abstractions.Authentication;
 using TodoApi.Application.Abstractions.Persistence;
-using TodoApi.Application.Common.Validation;
 using TodoApi.Application.Exceptions;
 using TodoApi.Application.Features.Authentication.Common;
+using TodoApi.Domain.Common;
 using TodoApi.Domain.Entities;
 using TodoApi.Domain.Enums;
 
 namespace TodoApi.Application.Features.Authentication.LoginWithGoogle;
 
-public class LoginWithGoogleUseCase
+public class LoginWithGoogleUseCase : UseCase<LoginWithGoogleCommand, AuthSession>
 {
+    private readonly IUnitOfWork _unitOfWork;
     private readonly IUserRepository _userRepository;
     private readonly IRefreshTokenRepository _refreshTokenRepository;
     private readonly IGoogleTokenValidator _googleTokenValidator;
     private readonly IRoleAssignmentPolicy _roleAssignmentPolicy;
     private readonly SessionIssuer _sessionIssuer;
-    private readonly IValidator<LoginWithGoogleCommand> _validator;
     private readonly TimeProvider _timeProvider;
 
     public LoginWithGoogleUseCase(
+        IUnitOfWork unitOfWork,
         IUserRepository userRepository,
         IRefreshTokenRepository refreshTokenRepository,
         IGoogleTokenValidator googleTokenValidator,
         IRoleAssignmentPolicy roleAssignmentPolicy,
         SessionIssuer sessionIssuer,
-        IValidator<LoginWithGoogleCommand> validator,
-        TimeProvider timeProvider)
+        UseCasePipeline<LoginWithGoogleCommand, AuthSession> pipeline,
+        TimeProvider timeProvider) : base(pipeline)
     {
+        ArgumentNullException.ThrowIfNull(unitOfWork);
+
         if (userRepository == null)
         {
             throw new ArgumentNullException(nameof(userRepository));
@@ -57,44 +61,35 @@ public class LoginWithGoogleUseCase
             throw new ArgumentNullException(nameof(sessionIssuer));
         }
 
-        if (validator == null)
-        {
-            throw new ArgumentNullException(nameof(validator));
-        }
-
         if (timeProvider == null)
         {
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
+        _unitOfWork = unitOfWork;
         _userRepository = userRepository;
         _refreshTokenRepository = refreshTokenRepository;
         _googleTokenValidator = googleTokenValidator;
         _roleAssignmentPolicy = roleAssignmentPolicy;
         _sessionIssuer = sessionIssuer;
-        _validator = validator;
         _timeProvider = timeProvider;
     }
 
-    public async Task<AuthSession> ExecuteAsync(
-        LoginWithGoogleCommand command,
-        CancellationToken cancellationToken = default)
+    protected override async Task<Result<AuthSession>> HandleAsync(
+        LoginWithGoogleCommand command, CancellationToken cancellationToken)
     {
-        await _validator.ValidateOrThrowAsync(command, cancellationToken);
-
         GoogleUserInfo? googleUser = await _googleTokenValidator.ValidateAsync(
             command.IdToken,
             cancellationToken);
 
         if (googleUser == null)
         {
-            throw new AuthenticationFailedException("The Google sign-in token is not valid.");
+            return Result<AuthSession>.Failure(AppErrors.GoogleTokenInvalid);
         }
 
         if (googleUser.IsEmailVerified == false)
         {
-            throw new AuthenticationFailedException(
-                "The Google account email address has not been verified.");
+            return Result<AuthSession>.Failure(AppErrors.GoogleEmailUnverified);
         }
 
         string normalizedEmail = EmailNormalizer.Normalize(googleUser.Email);
@@ -138,11 +133,11 @@ public class LoginWithGoogleUseCase
             user.PromoteToAdmin();
         }
 
-        await _userRepository.SaveChangesAsync(cancellationToken);
+        PendingAuthSession session = await _sessionIssuer.PrepareAsync(user, cancellationToken);
 
-        AuthSession session = await _sessionIssuer.IssueAsync(user, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        return session;
+        return Result<AuthSession>.Success(_sessionIssuer.CreateSession(session));
     }
 
     private async Task RevokeExistingSessionsAsync(int userId, CancellationToken cancellationToken)

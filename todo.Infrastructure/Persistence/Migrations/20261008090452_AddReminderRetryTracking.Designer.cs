@@ -15,7 +15,6 @@ namespace TodoApi.Infrastructure.Persistence.Migrations
     [Migration("20261008090452_AddReminderRetryTracking")]
     partial class AddReminderRetryTracking
     {
-        /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618

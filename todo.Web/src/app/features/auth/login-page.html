@@ -1,0 +1,110 @@
+<div class="login-background">
+  <main class="login-card">
+    <div class="brand">
+      <p class="brand-name">Todo</p>
+      <p class="brand-caption">Gününü düzenle</p>
+    </div>
+
+    <div class="mode-switch" role="tablist" aria-label="Giriş türü">
+      <button
+        type="button"
+        role="tab"
+        [class.active]="mode() === 'login'"
+        [attr.aria-selected]="mode() === 'login'"
+        (click)="switchMode('login')"
+      >
+        Giriş yap
+      </button>
+      <button
+        type="button"
+        role="tab"
+        [class.active]="mode() === 'register'"
+        [attr.aria-selected]="mode() === 'register'"
+        (click)="switchMode('register')"
+      >
+        Kayıt ol
+      </button>
+    </div>
+
+    <form [formGroup]="form" class="login-form" (ngSubmit)="submit()">
+      @if (mode() === 'register') {
+        <label class="field-group">
+          <span>Adın</span>
+          <input
+            nz-input
+            name="displayName"
+            formControlName="displayName"
+            autocomplete="name"
+            [maxlength]="validationLimits.displayNameMaximumLength"
+          />
+          <app-form-field-error
+            [control]="form.controls.displayName"
+            [messages]="{ required: 'Adını boş bırakma.' }"
+          />
+        </label>
+      }
+
+      <label class="field-group">
+        <span>E-posta</span>
+        <input
+          nz-input
+          name="email"
+          type="email"
+          formControlName="email"
+          autocomplete="email"
+          [maxlength]="validationLimits.emailMaximumLength"
+        />
+        <app-form-field-error
+          [control]="form.controls.email"
+          [messages]="{ required: 'Geçerli bir e-posta adresi gir.' }"
+        />
+      </label>
+
+      <label class="field-group">
+        <span>Şifre</span>
+        <input
+          nz-input
+          name="password"
+          type="password"
+          formControlName="password"
+          [attr.autocomplete]="mode() === 'login' ? 'current-password' : 'new-password'"
+          [maxlength]="validationLimits.passwordMaximumLength"
+        />
+        @if (mode() === 'register') {
+          <small
+            >En az {{ validationLimits.passwordMinimumLength }} karakter; harf ve rakam
+            içermeli.</small
+          >
+        }
+        <app-form-field-error
+          [control]="form.controls.password"
+          [messages]="{ passwordPolicy: passwordPolicyMessage, required: 'Şifreni gir.' }"
+        />
+      </label>
+      <app-api-errors [error]="apiError()" />
+
+      <button nz-button nzType="primary" nzBlock type="submit" [nzLoading]="isSubmitting()">
+        {{ mode() === 'login' ? 'Giriş yap' : 'Hesap oluştur' }}
+      </button>
+    </form>
+
+    <div class="divider"><span>veya</span></div>
+
+    @switch (googleStatus()) {
+      @case ('ready') {
+        <div #googleButton class="google-button"></div>
+      }
+      @case ('disabled') {
+        <p class="google-note">
+          Google ile giriş bu uygulamada etkin değil. E-posta ve şifreyle devam edebilirsin.
+        </p>
+      }
+      @case ('unavailable') {
+        <p class="google-note">Google ile giriş şu anda kullanılamıyor.</p>
+      }
+      @default {
+        <p class="google-note">Google ile giriş hazırlanıyor…</p>
+      }
+    }
+  </main>
+</div>

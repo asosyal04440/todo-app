@@ -37,6 +37,9 @@ public sealed class HttpContextCurrentUser : ICurrentUser
         }
     }
 
+    public int? UserIdOrNull =>
+        _httpContextAccessor.HttpContext?.User.Identity?.IsAuthenticated == true ? UserId : null;
+
     public bool IsAdmin
     {
         get

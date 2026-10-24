@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using TodoApi.Application.Abstractions.Persistence;
 using TodoApi.Domain.Entities;
+using TodoApi.Domain.Specifications;
 
 namespace TodoApi.Infrastructure.Persistence;
 
@@ -19,24 +20,15 @@ public sealed class TodoReminderRepository : ITodoReminderRepository
     }
 
     public async Task<IReadOnlyList<TodoReminderCandidate>> GetTodosDueForReminderAsync(
-        DateTime nowUtc,
-        DateTime dueBeforeUtc,
-        DateTime lastFailedAttemptBeforeUtc,
-        int maximumAttempts,
+        TodoReminderSpecification specification,
         int maxCount,
         CancellationToken cancellationToken)
     {
+        ArgumentNullException.ThrowIfNull(specification);
         var rows = await (
-            from todo in _todoDbContext.TodoItems
+            from todo in _todoDbContext.TodoItems.Where(specification.ToExpression())
             join todoList in _todoDbContext.TodoLists on todo.TodoListId equals todoList.Id
             join owner in _todoDbContext.Users on todoList.OwnerUserId equals owner.Id
-            where todo.IsCompleted == false
-                && todo.ReminderSentAtUtc == null
-                && todo.DueAtUtc != null
-                && todo.DueAtUtc > nowUtc
-                && todo.DueAtUtc <= dueBeforeUtc
-                && todo.ReminderAttemptCount < maximumAttempts
-                && (todo.ReminderLastAttemptAtUtc == null || todo.ReminderLastAttemptAtUtc <= lastFailedAttemptBeforeUtc)
             orderby todo.DueAtUtc
             select new
             {
@@ -62,10 +54,5 @@ public sealed class TodoReminderRepository : ITodoReminderRepository
         }
 
         return candidates;
-    }
-
-    public async Task SaveChangesAsync(CancellationToken cancellationToken)
-    {
-        await _todoDbContext.SaveChangesAsync(cancellationToken);
     }
 }

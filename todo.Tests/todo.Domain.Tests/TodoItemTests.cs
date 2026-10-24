@@ -9,6 +9,29 @@ public class TodoItemTests
     private const int OwnerUserId = 1;
 
     [Fact]
+    public void AddTodo_AcceptsATitleOfExactly120CharactersWithoutAnApi()
+    {
+        TodoList todoList = new TodoList("Ev", OwnerUserId);
+        string title = new string('a', 120);
+
+        TodoItem todoItem = todoList.AddTodo(title);
+
+        Assert.Equal(title, todoItem.Title);
+    }
+
+    [Fact]
+    public void RenameTodo_RejectsAnOversizedTitleAndPreservesTheOldTitle()
+    {
+        TodoList todoList = new TodoList("Ev", OwnerUserId);
+        TodoItem todoItem = todoList.AddTodo("Raporu yaz");
+
+        Assert.Throws<DomainRuleViolationException>(
+            () => todoList.RenameTodo(todoItem, new string('a', 121)));
+
+        Assert.Equal("Raporu yaz", todoItem.Title);
+    }
+
+    [Fact]
     public void AddTodo_RejectsAnEmptyTitle()
     {
         TodoList todoList = new TodoList("Ev", OwnerUserId);

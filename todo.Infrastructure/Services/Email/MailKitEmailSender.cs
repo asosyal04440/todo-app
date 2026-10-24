@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -14,9 +16,10 @@ public sealed class MailKitEmailSender : IEmailSender
 
     private readonly SmtpSettings _smtpSettings;
 
-    public MailKitEmailSender(SmtpSettings smtpSettings)
+    public MailKitEmailSender(IOptions<SmtpOptions> smtpSettings)
     {
-        _smtpSettings = smtpSettings ?? throw new ArgumentNullException(nameof(smtpSettings));
+        ArgumentNullException.ThrowIfNull(smtpSettings);
+        _smtpSettings = smtpSettings.Value.ToSettings();
     }
 
     public bool IsConfigured

@@ -1,3 +1,4 @@
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Features.TodoLists.CreateTodoList;
 using TodoApi.Application.Features.TodoLists.DeleteTodoList;
 using TodoApi.Application.Features.TodoLists.GetTodoListById;
@@ -17,10 +18,10 @@ public class TodoListAuthorizationTests
     public async Task CreateTodoList_MakesTheCurrentUserTheOwner()
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
-        CreateTodoListUseCase useCase = new CreateTodoListUseCase(
+        CreateTodoListUseCase useCase = new CreateTodoListUseCase(repository.UnitOfWork,
             repository,
             FakeCurrentUser.OtherUser(),
-            new CreateTodoListCommandValidator());
+            TestUseCasePipelines.ForCreateTodoList(new CreateTodoListCommandValidator()));
 
         await useCase.ExecuteAsync(
             new CreateTodoListCommand { Name = "Ev" },
@@ -35,13 +36,13 @@ public class TodoListAuthorizationTests
         FakeTodoListRepository repository = new FakeTodoListRepository();
         repository.AddExistingTodoList("Benim listem", FakeCurrentUser.ListOwnerUserId);
         repository.AddExistingTodoList("Başkasının listesi", FakeCurrentUser.OtherUserId);
-        GetTodoListsUseCase useCase = new GetTodoListsUseCase(
-            repository,
-            FakeCurrentUser.ListOwner());
+        GetTodoListsUseCase useCase = new GetTodoListsUseCase(repository,
+            FakeCurrentUser.ListOwner(),
+            TestUseCasePipelines.ForGetTodoLists());
 
-        var results = await useCase.ExecuteAsync(TestContext.Current.CancellationToken);
+        var results = TestResults.Success(await useCase.ExecuteAsync(TestContext.Current.CancellationToken));
 
-        Assert.Equal("Benim listem", Assert.Single(results).Name);
+        Assert.Equal("Benim listem", Assert.Single(results.Items).Name);
     }
 
     [Fact]
@@ -49,13 +50,14 @@ public class TodoListAuthorizationTests
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
-        GetTodoListByIdUseCase useCase = new GetTodoListByIdUseCase(
-            repository,
-            FakeCurrentUser.OtherUser());
+        GetTodoListByIdUseCase useCase = new GetTodoListByIdUseCase(repository,
+            FakeCurrentUser.OtherUser(),
+            TestUseCasePipelines.ForGetTodoListById());
 
         var result = await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken);
 
-        Assert.Null(result);
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, result.Error!.Code);
     }
 
     [Fact]
@@ -63,11 +65,11 @@ public class TodoListAuthorizationTests
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
-        GetTodoListByIdUseCase useCase = new GetTodoListByIdUseCase(
-            repository,
-            FakeCurrentUser.Admin());
+        GetTodoListByIdUseCase useCase = new GetTodoListByIdUseCase(repository,
+            FakeCurrentUser.Admin(),
+            TestUseCasePipelines.ForGetTodoListById());
 
-        var result = await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken);
+        var result = TestResults.Success(await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken));
 
         Assert.NotNull(result);
         Assert.Equal("Ev", result.Name);
@@ -78,18 +80,19 @@ public class TodoListAuthorizationTests
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
-        RenameTodoListUseCase useCase = new RenameTodoListUseCase(
+        RenameTodoListUseCase useCase = new RenameTodoListUseCase(repository.UnitOfWork,
             repository,
             FakeCurrentUser.OtherUser(),
-            new RenameTodoListCommandValidator());
+            TestUseCasePipelines.ForRenameTodoList(new RenameTodoListCommandValidator()));
 
         var result = await useCase.ExecuteAsync(
             new RenameTodoListCommand { TodoListId = savedList.Id, Name = "Ele geçirildi" },
             TestContext.Current.CancellationToken);
 
-        Assert.Null(result);
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, result.Error!.Code);
         Assert.Equal("Ev", savedList.Name);
-        Assert.Equal(0, repository.SaveChangesCount);
+        Assert.Equal(0, repository.UnitOfWork.SaveChangesCount);
     }
 
     [Fact]
@@ -97,15 +100,17 @@ public class TodoListAuthorizationTests
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
-        DeleteTodoListUseCase useCase = new DeleteTodoListUseCase(
+        DeleteTodoListUseCase useCase = new DeleteTodoListUseCase(repository.UnitOfWork,
             repository,
-            FakeCurrentUser.OtherUser());
+            FakeCurrentUser.OtherUser(),
+            TestUseCasePipelines.ForDeleteTodoList());
 
-        bool wasDeleted = await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken);
+        var wasDeleted = await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken);
 
-        Assert.False(wasDeleted);
+        Assert.True(wasDeleted.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, wasDeleted.Error!.Code);
         Assert.Single(repository.TodoLists);
-        Assert.Equal(0, repository.SaveChangesCount);
+        Assert.Equal(0, repository.UnitOfWork.SaveChangesCount);
     }
 
     [Fact]
@@ -113,16 +118,17 @@ public class TodoListAuthorizationTests
     {
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
-        CreateTodoUseCase useCase = new CreateTodoUseCase(
+        CreateTodoUseCase useCase = new CreateTodoUseCase(repository.UnitOfWork,
             repository,
             FakeCurrentUser.OtherUser(),
-            new CreateTodoCommandValidator(FakeTimeProvider.AtTestStart()));
+            TestUseCasePipelines.ForCreateTodo(new CreateTodoCommandValidator(FakeTimeProvider.AtTestStart())));
 
         var result = await useCase.ExecuteAsync(
             new CreateTodoCommand { TodoListId = savedList.Id, Title = "İzinsiz görev" },
             TestContext.Current.CancellationToken);
 
-        Assert.Null(result);
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, result.Error!.Code);
         Assert.Empty(savedList.Todos);
     }
 
@@ -132,13 +138,14 @@ public class TodoListAuthorizationTests
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
         repository.AddExistingTodoItem(savedList, "Gizli görev");
-        GetTodosInListUseCase useCase = new GetTodosInListUseCase(
-            repository,
-            FakeCurrentUser.OtherUser());
+        GetTodosInListUseCase useCase = new GetTodosInListUseCase(repository,
+            FakeCurrentUser.OtherUser(),
+            TestUseCasePipelines.ForGetTodosInList());
 
         var result = await useCase.ExecuteAsync(savedList.Id, TestContext.Current.CancellationToken);
 
-        Assert.Null(result);
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, result.Error!.Code);
     }
 
     [Fact]
@@ -147,9 +154,10 @@ public class TodoListAuthorizationTests
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
         var savedTodo = repository.AddExistingTodoItem(savedList, "Görev");
-        SetTodoCompletionStatusUseCase useCase = new SetTodoCompletionStatusUseCase(
+        SetTodoCompletionStatusUseCase useCase = new SetTodoCompletionStatusUseCase(repository.UnitOfWork,
             repository,
-            FakeCurrentUser.OtherUser());
+            FakeCurrentUser.OtherUser(),
+            TestUseCasePipelines.ForSetTodoCompletionStatus());
 
         var result = await useCase.ExecuteAsync(
             savedList.Id,
@@ -157,7 +165,8 @@ public class TodoListAuthorizationTests
             true,
             TestContext.Current.CancellationToken);
 
-        Assert.Null(result);
+        Assert.True(result.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, result.Error!.Code);
         Assert.False(savedTodo.IsCompleted);
     }
 
@@ -167,16 +176,18 @@ public class TodoListAuthorizationTests
         FakeTodoListRepository repository = new FakeTodoListRepository();
         var savedList = repository.AddExistingTodoList("Ev");
         var savedTodo = repository.AddExistingTodoItem(savedList, "Görev");
-        DeleteTodoUseCase useCase = new DeleteTodoUseCase(
+        DeleteTodoUseCase useCase = new DeleteTodoUseCase(repository.UnitOfWork,
             repository,
-            FakeCurrentUser.OtherUser());
+            FakeCurrentUser.OtherUser(),
+            TestUseCasePipelines.ForDeleteTodo());
 
-        bool wasDeleted = await useCase.ExecuteAsync(
+        var wasDeleted = await useCase.ExecuteAsync(
             savedList.Id,
             savedTodo.Id,
             TestContext.Current.CancellationToken);
 
-        Assert.False(wasDeleted);
+        Assert.True(wasDeleted.IsFailure);
+        Assert.Equal(ErrorCode.AccessDenied, wasDeleted.Error!.Code);
         Assert.Single(savedList.Todos);
     }
 }

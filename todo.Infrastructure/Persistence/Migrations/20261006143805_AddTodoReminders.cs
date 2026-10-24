@@ -5,10 +5,8 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 namespace TodoApi.Infrastructure.Persistence.Migrations
 {
-    /// <inheritdoc />
     public partial class AddTodoReminders : Migration
     {
-        /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<DateTime>(
@@ -23,7 +21,6 @@ namespace TodoApi.Infrastructure.Persistence.Migrations
                 column: "DueAtUtc");
         }
 
-        /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropIndex(

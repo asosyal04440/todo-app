@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
@@ -5,7 +7,7 @@ using TodoApi.API.Authentication;
 using TodoApi.API.Models.Requests;
 using TodoApi.API.Models.Responses;
 using TodoApi.Application.Contracts;
-using TodoApi.Application.Exceptions;
+using TodoApi.Application.Common.Results;
 using TodoApi.Application.Features.Authentication.Common;
 using TodoApi.Application.Features.Authentication.GetCurrentUser;
 using TodoApi.Application.Features.Authentication.LoginWithGoogle;
@@ -37,7 +39,7 @@ public sealed class AuthController : ControllerBase
         RefreshSessionUseCase refreshSessionUseCase,
         LogoutUseCase logoutUseCase,
         GetCurrentUserUseCase getCurrentUserUseCase,
-        GoogleAuthenticationSettings googleSettings)
+        IOptions<GoogleAuthenticationOptions> googleSettings)
     {
         _registerWithPasswordUseCase = registerWithPasswordUseCase;
         _loginWithPasswordUseCase = loginWithPasswordUseCase;
@@ -45,7 +47,7 @@ public sealed class AuthController : ControllerBase
         _refreshSessionUseCase = refreshSessionUseCase;
         _logoutUseCase = logoutUseCase;
         _getCurrentUserUseCase = getCurrentUserUseCase;
-        _googleSettings = googleSettings;
+        _googleSettings = googleSettings.Value.ToSettings();
     }
 
     [AllowAnonymous]
@@ -69,18 +71,14 @@ public sealed class AuthController : ControllerBase
     {
         RegisterWithPasswordCommand command = new RegisterWithPasswordCommand
         {
-            Email = request.Email,
-            DisplayName = request.DisplayName,
-            Password = request.Password
+            Email = request.Email, DisplayName = request.DisplayName, Password = request.Password
         };
-
-        AuthSession session = await _registerWithPasswordUseCase.ExecuteAsync(
-            command,
-            cancellationToken);
-
-        RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
-
-        return CreatedAtAction(nameof(GetCurrentUser), null, session.Result);
+        var result = await _registerWithPasswordUseCase.ExecuteAsync(command, cancellationToken);
+        return result.ToActionResult(this, session =>
+        {
+            RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
+            return CreatedAtAction(nameof(GetCurrentUser), null, session.Result);
+        });
     }
 
     [AllowAnonymous]
@@ -90,19 +88,13 @@ public sealed class AuthController : ControllerBase
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
-        LoginWithPasswordCommand command = new LoginWithPasswordCommand
+        var command = new LoginWithPasswordCommand { Email = request.Email, Password = request.Password };
+        var result = await _loginWithPasswordUseCase.ExecuteAsync(command, cancellationToken);
+        return result.ToActionResult(this, session =>
         {
-            Email = request.Email,
-            Password = request.Password
-        };
-
-        AuthSession session = await _loginWithPasswordUseCase.ExecuteAsync(
-            command,
-            cancellationToken);
-
-        RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
-
-        return Ok(session.Result);
+            RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
+            return Ok(session.Result);
+        });
     }
 
     [AllowAnonymous]
@@ -112,18 +104,13 @@ public sealed class AuthController : ControllerBase
         [FromBody] GoogleLoginRequest request,
         CancellationToken cancellationToken)
     {
-        LoginWithGoogleCommand command = new LoginWithGoogleCommand
+        var command = new LoginWithGoogleCommand { IdToken = request.IdToken };
+        var result = await _loginWithGoogleUseCase.ExecuteAsync(command, cancellationToken);
+        return result.ToActionResult(this, session =>
         {
-            IdToken = request.IdToken
-        };
-
-        AuthSession session = await _loginWithGoogleUseCase.ExecuteAsync(
-            command,
-            cancellationToken);
-
-        RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
-
-        return Ok(session.Result);
+            RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
+            return Ok(session.Result);
+        });
     }
 
     [AllowAnonymous]
@@ -131,52 +118,32 @@ public sealed class AuthController : ControllerBase
     public async Task<ActionResult<AuthResultDto>> Refresh(CancellationToken cancellationToken)
     {
         string? refreshToken = RefreshTokenCookie.Read(Request);
-
-        try
-        {
-            AuthSession session = await _refreshSessionUseCase.ExecuteAsync(
-                refreshToken,
-                cancellationToken);
-
-            RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
-
-            return Ok(session.Result);
-        }
-        catch (AuthenticationFailedException exception)
-        {
+        var result = await _refreshSessionUseCase.ExecuteAsync(refreshToken, cancellationToken);
+        if (result.Error?.Kind == ErrorKind.Unauthorized)
             RefreshTokenCookie.Delete(Response);
-
-            return Problem(
-                statusCode: StatusCodes.Status401Unauthorized,
-                title: "Authentication failed.",
-                detail: exception.Message);
-        }
+        return result.ToActionResult(this, session =>
+        {
+            RefreshTokenCookie.Write(Response, session.RefreshToken, session.RefreshTokenExpiresAtUtc);
+            return Ok(session.Result);
+        });
     }
 
     [AllowAnonymous]
     [HttpPost("logout")]
     public async Task<IActionResult> Logout(CancellationToken cancellationToken)
     {
-        string? refreshToken = RefreshTokenCookie.Read(Request);
-
-        await _logoutUseCase.ExecuteAsync(refreshToken, cancellationToken);
-
-        RefreshTokenCookie.Delete(Response);
-
-        return NoContent();
+        var result = await _logoutUseCase.ExecuteAsync(RefreshTokenCookie.Read(Request), cancellationToken);
+        return result.ToActionResult(this, _ =>
+        {
+            RefreshTokenCookie.Delete(Response);
+            return NoContent();
+        });
     }
 
     [Authorize]
     [HttpGet("me")]
     public async Task<ActionResult<UserDto>> GetCurrentUser(CancellationToken cancellationToken)
     {
-        UserDto? currentUser = await _getCurrentUserUseCase.ExecuteAsync(cancellationToken);
-
-        if (currentUser == null)
-        {
-            return Unauthorized();
-        }
-
-        return Ok(currentUser);
+        return (await _getCurrentUserUseCase.ExecuteAsync(cancellationToken)).ToActionResult(this);
     }
 }

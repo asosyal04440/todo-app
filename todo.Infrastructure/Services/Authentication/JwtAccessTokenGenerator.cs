@@ -1,3 +1,5 @@
+using Microsoft.Extensions.Options;
+using TodoApi.Infrastructure.Configuration;
 using System;
 using System.Collections.Generic;
 using System.Text;
@@ -15,7 +17,7 @@ public sealed class JwtAccessTokenGenerator : IAccessTokenGenerator
     private readonly JwtSettings _jwtSettings;
     private readonly TimeProvider _timeProvider;
 
-    public JwtAccessTokenGenerator(JwtSettings jwtSettings, TimeProvider timeProvider)
+    public JwtAccessTokenGenerator(IOptions<JwtOptions> jwtSettings, TimeProvider timeProvider)
     {
         if (jwtSettings == null)
         {
@@ -27,7 +29,7 @@ public sealed class JwtAccessTokenGenerator : IAccessTokenGenerator
             throw new ArgumentNullException(nameof(timeProvider));
         }
 
-        _jwtSettings = jwtSettings;
+        _jwtSettings = jwtSettings.Value.ToSettings();
         _timeProvider = timeProvider;
     }
 
