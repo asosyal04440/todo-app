@@ -53,7 +53,7 @@ export class TodoListSidebar implements OnChanges {
       this.errors.applyFieldErrors(this.form, this.apiError);
   }
   submit(): void {
-    if (this.saving) return;
+    if (this.saving || this.busy) return;
     this.form.markAllAsTouched();
     if (this.form.valid) this.createRequested.emit(this.form.controls.name.value.trim());
   }

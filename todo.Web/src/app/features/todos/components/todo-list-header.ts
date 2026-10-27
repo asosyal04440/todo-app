@@ -32,6 +32,7 @@ export class TodoListHeader implements OnChanges {
   @Input() totalCount = 0;
   @Input() renaming = false;
   @Input() saving = false;
+  @Input() busy = false;
   @Input() apiError: ApiError | null = null;
   @Output() readonly renameStarted = new EventEmitter<void>();
   @Output() readonly renameCancelled = new EventEmitter<void>();

@@ -4,8 +4,27 @@
     <h1>Görevlerin</h1>
   </div>
   <div class="top-bar-actions">
+    @if (showRefresh) {
+      <button
+        nz-button
+        type="button"
+        aria-label="Yenile"
+        [attr.aria-busy]="refreshing"
+        [nzLoading]="refreshing"
+        [disabled]="refreshDisabled"
+        (click)="refreshRequested.emit()"
+      >
+        Yenile
+      </button>
+    }
     @if (showCreate) {
-      <button nz-button nzType="primary" type="button" (click)="createRequested.emit()">
+      <button
+        nz-button
+        nzType="primary"
+        type="button"
+        [disabled]="refreshing"
+        (click)="createRequested.emit()"
+      >
         + Yeni görev
       </button>
     }

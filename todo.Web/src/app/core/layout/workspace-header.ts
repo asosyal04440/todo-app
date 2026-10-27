@@ -13,6 +13,10 @@ export class WorkspaceHeader {
   @Input() user: CurrentUser | null = null;
   @Input() isAdmin = false;
   @Input() showCreate = false;
+  @Input() showRefresh = false;
+  @Input() refreshing = false;
+  @Input() refreshDisabled = false;
   @Output() readonly createRequested = new EventEmitter<void>();
+  @Output() readonly refreshRequested = new EventEmitter<void>();
   @Output() readonly logoutRequested = new EventEmitter<void>();
 }

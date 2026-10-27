@@ -51,6 +51,121 @@ test('uses the compiled API setting without fetching a runtime configuration fil
   expect(runtimeRequests).toEqual([]);
 });
 
+test('workspace refresh starts both reads and applies their results together', async ({
+  page,
+  request,
+}, testInfo) => {
+  const list = await createList(page, `E2E yenile ${Date.now()}`);
+  const todo = await createTodo(page, list.id, 'Eski görev');
+  await expect(page.locator('.todo-card')).toContainText('Eski görev');
+  const renamed = `${list.name} güncel`;
+  expect(
+    (await request.put(`${apiUrl}/todo-lists/${list.id}`, { data: { name: renamed } })).status(),
+  ).toBe(200);
+  expect(
+    (
+      await request.put(`${apiUrl}/todo-lists/${list.id}/todos/${todo.id}`, {
+        data: { title: 'Güncel görev', description: null, dueAtUtc: null, priority: 'Normal' },
+      })
+    ).status(),
+  ).toBe(200);
+
+  const reads: string[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    if (
+      request.method() === 'GET' &&
+      (url.pathname === '/api/todo-lists' || url.pathname === `/api/todo-lists/${list.id}/todos`)
+    )
+      reads.push(url.pathname + url.search);
+  });
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route('**/api/todo-lists?*', async (route) => {
+    await gate;
+    await route.continue();
+  });
+  try {
+    const taskResponse = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === `/api/todo-lists/${list.id}/todos`,
+    );
+    await page.getByRole('button', { name: 'Yenile', exact: true }).click();
+    expect((await taskResponse).status()).toBe(200);
+    await expect.poll(() => reads.length).toBe(2);
+    await expect(page.getByRole('button', { name: 'Yenile', exact: true })).toBeDisabled();
+    await expect(page.locator('.todo-card')).toContainText('Eski görev');
+    await expect(page.locator('.list-header-card h2')).toHaveText(list.name);
+    release();
+    await expect(page.locator('.todo-card')).toContainText('Güncel görev');
+    await expect(page.locator('.list-header-card h2')).toHaveText(renamed);
+    await expect(page.getByRole('button', { name: 'Yenile', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Yenile', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Yenile', exact: true })).toBeEnabled();
+    await expect.poll(() => reads.length).toBe(4);
+    await writeFile(
+      testInfo.outputPath('workspace-refresh-network.json'),
+      JSON.stringify(reads, null, 2),
+    );
+  } finally {
+    release();
+    await page.unrouteAll({ behavior: 'wait' });
+  }
+});
+
+test('list and page selection avoid duplicate reads and reset the new list to page one', async ({
+  page,
+  request,
+}) => {
+  const first = await createList(page, `E2E sayfalı ${Date.now()}`);
+  for (let index = 1; index <= 21; index++) {
+    expect(
+      (
+        await request.post(`${apiUrl}/todo-lists/${first.id}/todos`, {
+          data: {
+            title: `Sayfa görevi ${index}`,
+            description: null,
+            dueAtUtc: null,
+            priority: 'Normal',
+          },
+        })
+      ).status(),
+    ).toBe(201);
+  }
+  const secondResponse = await request.post(`${apiUrl}/todo-lists`, {
+    data: { name: `E2E ikinci ${Date.now()}` },
+  });
+  expect(secondResponse.status()).toBe(201);
+  const second = (await secondResponse.json()) as TodoListResponse;
+  await page.getByRole('button', { name: 'Yenile', exact: true }).click();
+  await expect(page.locator('.todo-card')).toHaveCount(20);
+  const reads: { listId: number; page: number }[] = [];
+  page.on('request', (request) => {
+    const url = new URL(request.url());
+    const match = /^\/api\/todo-lists\/(\d+)\/todos$/.exec(url.pathname);
+    if (request.method() === 'GET' && match)
+      reads.push({ listId: Number(match[1]), page: Number(url.searchParams.get('pageNumber')) });
+  });
+  try {
+    await page
+      .getByRole('navigation', { name: 'Görev sayfaları' })
+      .getByRole('button', { name: 'Sonraki' })
+      .click();
+    await expect(page.locator('.todo-card')).toHaveCount(1);
+    await page.locator('.list-navigation-item').filter({ hasText: first.name }).click();
+    await expect(page.getByRole('navigation', { name: 'Görev sayfaları' })).toContainText('2 / 2');
+    await page.locator('.list-navigation-item').filter({ hasText: second.name }).click();
+    await expect(page.getByRole('heading', { name: 'Bu listede henüz görev yok' })).toBeVisible();
+    expect(reads).toEqual([
+      { listId: first.id, page: 2 },
+      { listId: second.id, page: 1 },
+    ]);
+  } finally {
+    expect((await request.delete(`${apiUrl}/todo-lists/${second.id}`)).status()).toBe(204);
+  }
+});
+
 test('the split workspace and editing form fit desktop and mobile viewports', async ({
   page,
   request,
@@ -243,6 +358,134 @@ test('a task can be created, loaded again, edited, completed, and deleted throug
     `${apiUrl}/todo-lists/${list.id}/todos/${createdTodo.id}`,
   );
   expect(deletedTodoResponse.status()).toBe(404);
+});
+
+test('completion requests ignore rapid repeats per task while another task can finish', async ({
+  page,
+  request,
+}, testInfo) => {
+  const list = await createList(page, `E2E tamamlama ${Date.now()}`);
+  const first = await createTodo(page, list.id, 'İlk görev');
+  const second = await createTodo(page, list.id, 'İkinci görev');
+  const firstCard = page.locator('.todo-card').filter({ hasText: first.title });
+  const secondCard = page.locator('.todo-card').filter({ hasText: second.title });
+  const firstCheckbox = firstCard.getByRole('checkbox');
+  const secondCheckbox = secondCard.getByRole('checkbox');
+  await expect(firstCheckbox).toBeEnabled();
+  await expect(secondCheckbox).toBeEnabled();
+  const firstPath = `/api/todo-lists/${list.id}/todos/${first.id}/completion`;
+  const secondPath = `/api/todo-lists/${list.id}/todos/${second.id}/completion`;
+  const network: { path: string; payload: unknown }[] = [];
+  page.on('request', (request) => {
+    const path = new URL(request.url()).pathname;
+    if (request.method() === 'PATCH' && [firstPath, secondPath].includes(path))
+      network.push({ path, payload: request.postDataJSON() });
+  });
+
+  let releaseFirst!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    releaseFirst = resolve;
+  });
+  await page.route(`**${firstPath}`, async (route) => {
+    await gate;
+    await route.continue();
+  });
+
+  try {
+    const started = page.waitForRequest(
+      (request) => new URL(request.url()).pathname === firstPath && request.method() === 'PATCH',
+    );
+    // Dispatch the burst in one browser turn, before Angular updates the disabled input.
+    await firstCheckbox.evaluate((checkbox: HTMLInputElement) => {
+      checkbox.click();
+      checkbox.click();
+      checkbox.click();
+    });
+    await started;
+    await expect(firstCheckbox).toBeDisabled();
+    await expect(firstCard.getByRole('button', { name: 'Düzenle' })).toBeDisabled();
+    await expect(firstCard.getByRole('button', { name: 'Sil', exact: true })).toBeDisabled();
+    await expect(secondCheckbox).toBeEnabled();
+    expect(network.filter((request) => request.path === firstPath)).toHaveLength(1);
+
+    const secondResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === secondPath && response.request().method() === 'PATCH',
+    );
+    await secondCard.locator('.completion-control').click();
+    expect((await secondResponse).status()).toBe(200);
+    await expect(secondCheckbox).toBeChecked();
+    await expect(firstCheckbox).toBeDisabled();
+
+    const firstResponse = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === firstPath && response.request().method() === 'PATCH',
+    );
+    releaseFirst();
+    expect((await firstResponse).status()).toBe(200);
+    await expect(firstCheckbox).toBeChecked();
+    await expect(firstCheckbox).toBeEnabled();
+    expect(network.filter((request) => request.path === firstPath)).toHaveLength(1);
+
+    const reopened = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === firstPath && response.request().method() === 'PATCH',
+    );
+    await firstCard.locator('.completion-control').click();
+    expect((await reopened).status()).toBe(200);
+    await expect(firstCheckbox).not.toBeChecked();
+    expect(network.filter((request) => request.path === firstPath)).toHaveLength(2);
+
+    const persistedFirst = await request.get(`${apiUrl}/todo-lists/${list.id}/todos/${first.id}`);
+    const persistedSecond = await request.get(`${apiUrl}/todo-lists/${list.id}/todos/${second.id}`);
+    expect((await persistedFirst.json()).isCompleted).toBe(false);
+    expect((await persistedSecond.json()).isCompleted).toBe(true);
+    const evidence = testInfo.outputPath('completion-network.json');
+    await writeFile(evidence, JSON.stringify(network, null, 2));
+    await testInfo.attach('completion-network', {
+      path: evidence,
+      contentType: 'application/json',
+    });
+  } finally {
+    releaseFirst();
+  }
+});
+
+test('completion requests recover after a transient API failure', async ({ page, request }) => {
+  const list = await createList(page, `E2E tamamlama hatası ${Date.now()}`);
+  const todo = await createTodo(page, list.id, 'Yeniden denenecek görev');
+  const card = page.locator('.todo-card').filter({ hasText: todo.title });
+  const checkbox = card.getByRole('checkbox');
+  await expect(checkbox).toBeEnabled();
+  const endpoint = `/api/todo-lists/${list.id}/todos/${todo.id}/completion`;
+  let attempts = 0;
+  await page.route(`**${endpoint}`, async (route) => {
+    attempts++;
+    if (attempts === 1)
+      await route.fulfill({ status: 503, json: { title: 'Simulated transient failure' } });
+    else await route.continue();
+  });
+
+  const failed = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === endpoint && response.request().method() === 'PATCH',
+  );
+  await card.locator('.completion-control').click();
+  expect((await failed).status()).toBe(503);
+  await expect(checkbox).toBeEnabled();
+  await expect(checkbox).not.toBeChecked();
+
+  const retried = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === endpoint && response.request().method() === 'PATCH',
+  );
+  await card.locator('.completion-control').click();
+  expect((await retried).status()).toBe(200);
+  await expect(checkbox).toBeChecked();
+  await expect(checkbox).toBeEnabled();
+  expect(attempts).toBe(2);
+  const persisted = await request.get(`${apiUrl}/todo-lists/${list.id}/todos/${todo.id}`);
+  expect((await persisted.json()).isCompleted).toBe(true);
 });
 
 test('task date validation matches the API and corrected creation appears in Network', async ({

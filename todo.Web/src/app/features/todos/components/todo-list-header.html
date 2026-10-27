@@ -27,10 +27,13 @@
       </p>
     </div>
     <div class="list-actions">
-      <button nz-button type="button" (click)="renameStarted.emit()">Yeniden adlandır</button>
+      <button nz-button type="button" [disabled]="saving || busy" (click)="renameStarted.emit()">
+        Yeniden adlandır
+      </button>
       <button
         nz-button
         nzDanger
+        [disabled]="saving || busy"
         nz-popconfirm
         nzPopconfirmTitle="Bu liste ve içindeki bütün görevler silinsin mi?"
         (nzOnConfirm)="deleteRequested.emit()"

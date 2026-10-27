@@ -17,6 +17,7 @@ export class TodoRow {
   @Input({ required: true }) todo!: TodoItem;
   @Input() editing = false;
   @Input() saving = false;
+  @Input() completing = false;
   @Input() apiError: ApiError | null = null;
   @Output() readonly editRequested = new EventEmitter<TodoItem>();
   @Output() readonly editCancelled = new EventEmitter<void>();
@@ -29,7 +30,8 @@ export class TodoRow {
 
   changeCompletion(event: Event): void {
     const checkbox = event.target as HTMLInputElement;
-    this.completionRequested.emit({ todo: this.todo, isCompleted: checkbox.checked });
+    if (!this.saving && !this.completing)
+      this.completionRequested.emit({ todo: this.todo, isCompleted: checkbox.checked });
     checkbox.checked = this.todo.isCompleted;
   }
 

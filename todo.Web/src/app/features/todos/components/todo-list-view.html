@@ -16,7 +16,13 @@
     <div class="empty-state">
       <h3>Bu listede henüz görev yok</h3>
       <p>İlk görevini ekleyerek planını oluşturmaya başla.</p>
-      <button nz-button nzType="primary" type="button" (click)="createRequested.emit()">
+      <button
+        nz-button
+        nzType="primary"
+        type="button"
+        [disabled]="saving"
+        (click)="createRequested.emit()"
+      >
         + İlk görevi ekle
       </button>
     </div>
@@ -25,6 +31,7 @@
       @for (todo of todos(); track todo.id) {
         <app-todo-row
           [todo]="todo"
+          [completing]="completingIds.has(todo.id)"
           [editing]="editingId === todo.id"
           [saving]="saving"
           [apiError]="apiError"

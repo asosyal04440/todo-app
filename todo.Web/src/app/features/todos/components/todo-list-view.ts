@@ -12,6 +12,7 @@ import { TodoRow } from './todo-row';
 })
 export class TodoListView {
   readonly todos = input<TodoItem[]>([]);
+  @Input() completingIds: ReadonlySet<number> = new Set();
   @Input() loading = false;
   @Input() saving = false;
   @Input() apiError: ApiError | null = null;

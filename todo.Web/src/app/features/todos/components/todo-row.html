@@ -10,7 +10,13 @@
   } @else {
     <div class="todo-card-main">
       <label class="completion-control" [attr.aria-label]="todo.title + ' tamamlandı'">
-        <input type="checkbox" [checked]="todo.isCompleted" (change)="changeCompletion($event)" />
+        <input
+          type="checkbox"
+          [checked]="todo.isCompleted"
+          [disabled]="saving || completing"
+          [attr.aria-busy]="completing"
+          (change)="changeCompletion($event)"
+        />
         <span class="custom-checkbox"></span>
       </label>
       <div class="todo-copy">
@@ -29,10 +35,18 @@
       </div>
     </div>
     <div class="todo-actions">
-      <button nz-button type="button" (click)="editRequested.emit(todo)">Düzenle</button>
+      <button
+        nz-button
+        type="button"
+        [disabled]="saving || completing"
+        (click)="editRequested.emit(todo)"
+      >
+        Düzenle
+      </button>
       <button
         nz-button
         nzDanger
+        [disabled]="saving || completing"
         nz-popconfirm
         nzPopconfirmTitle="Bu görev silinsin mi?"
         (nzOnConfirm)="deleteRequested.emit(todo)"

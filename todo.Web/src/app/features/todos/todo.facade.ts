@@ -4,16 +4,26 @@ import { DestroyRef, Injectable, computed, inject, signal } from '@angular/core'
 import { NzMessageService } from 'ng-zorro-antd/message';
 import {
   EMPTY,
+  BehaviorSubject,
   Observable,
   Subject,
   catchError,
+  combineLatest,
   defer,
+  distinctUntilChanged,
+  exhaustMap,
   finalize,
+  forkJoin,
+  groupBy,
   firstValueFrom,
+  map,
+  merge,
+  mergeMap,
   of,
   switchMap,
   take,
   tap,
+  throwError,
 } from 'rxjs';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { PagedResult } from '../../shared/pagination/paged-result';
@@ -23,11 +33,25 @@ import { TodoApiService } from './todo-api.service';
 
 type ErrorTarget = 'read' | 'list-create' | 'list-rename' | 'todo-create' | 'todo-edit';
 
+interface TodoReadCommand {
+  listId: number;
+  pageNumber: number;
+  refreshLists: boolean;
+  done: () => void;
+}
+
+interface WorkspacePage {
+  lists: PagedResult<TodoList>;
+  selectedList: TodoList | null;
+  todos: PagedResult<TodoItem>;
+}
+
 const CONCURRENCY_CONFLICT_PROBLEM_TYPE = 'urn:todo:problem:concurrency-conflict';
 
 @Injectable()
 export class TodoFacade {
   private readonly todoApi = inject(TodoApiService);
+  private readonly destroyRef = inject(DestroyRef);
   readonly errorTarget = signal<ErrorTarget>('read');
   readonly errorTodoId = signal<number | null>(null);
   readonly error = signal<ApiError | null>(null);
@@ -45,11 +69,16 @@ export class TodoFacade {
   readonly todoPageNumber = signal<number>(1);
   readonly todoTotalCount = signal<number>(0);
   readonly todoTotalPages = signal<number>(0);
-  private readonly todoLoads = new Subject<{
-    listId: number;
-    pageNumber: number;
-    done: () => void;
-  } | null>();
+  private readonly selectedListIds = new BehaviorSubject<number | null>(null);
+  private readonly todoPages = new BehaviorSubject<TodoReadCommand | null>(null);
+  private readonly todoReloads = new Subject<TodoReadCommand>();
+  private activeTodoLoad: { command: TodoReadCommand; promise: Promise<void> } | null = null;
+  private readonly completionRequests = new Subject<{
+    todoListId: number;
+    todoId: number;
+    isCompleted: boolean;
+  }>();
+  readonly completingTodoIds = signal<ReadonlySet<number>>(new Set());
   private destroyed = false;
 
   readonly listLoadState = signal<'idle' | 'loading' | 'loaded' | 'error'>('idle');
@@ -59,6 +88,18 @@ export class TodoFacade {
   readonly isSavingList = signal<boolean>(false);
   readonly isSavingTodo = signal<boolean>(false);
   readonly isApiAvailable = signal<boolean>(false);
+  readonly isRefreshing = signal(false);
+  readonly canRefresh = computed(
+    () =>
+      !this.isLoadingLists() &&
+      !this.isLoadingTodos() &&
+      !this.isSavingList() &&
+      !this.isSavingTodo() &&
+      !this.isCreatingTodo() &&
+      !this.isRenamingList() &&
+      this.editingTodoId() === null &&
+      this.completingTodoIds().size === 0,
+  );
 
   readonly isRenamingList = signal<boolean>(false);
 
@@ -67,11 +108,19 @@ export class TodoFacade {
   readonly editingTodoId = signal<number | null>(null);
 
   constructor() {
-    const destroyRef = inject(DestroyRef);
+    const destroyRef = this.destroyRef;
     destroyRef.onDestroy(() => {
       this.destroyed = true;
     });
-    this.todoLoads
+    const queryChanges = combineLatest([this.selectedListIds, this.todoPages]).pipe(
+      // A page belongs to a list: resetting the list and its page must not fetch an old page.
+      map(([listId, page]) => (page?.listId === listId ? page : null)),
+      distinctUntilChanged(
+        (previous, current) =>
+          previous?.listId === current?.listId && previous?.pageNumber === current?.pageNumber,
+      ),
+    );
+    merge(queryChanges, this.todoReloads)
       .pipe(
         switchMap((command) =>
           command === null
@@ -79,28 +128,83 @@ export class TodoFacade {
             : defer(() => {
                 this.error.set(null);
                 this.todoLoadState.set('loading');
+                if (command.refreshLists) {
+                  this.isRefreshing.set(true);
+                  this.listLoadState.set('loading');
+                  return this.fetchWorkspacePage(command);
+                }
                 this.todos.set([]);
                 this.todoTotalCount.set(0);
                 this.todoTotalPages.set(0);
                 return this.fetchTodoPage(command.listId, command.pageNumber);
               }).pipe(
-                tap((page) => {
+                tap((result) => {
+                  const page = 'lists' in result ? result.todos : result;
+                  if ('lists' in result) {
+                    this.applyListPage(result.lists);
+                    this.selectedList.set(result.selectedList);
+                    this.listLoadState.set('loaded');
+                  }
                   this.todos.set(page.items);
                   this.todoPageNumber.set(page.pageNumber);
                   this.todoTotalCount.set(page.totalCount);
                   this.todoTotalPages.set(page.totalPages);
                   this.todoLoadState.set('loaded');
+                  this.isApiAvailable.set(true);
                 }),
                 catchError((error: unknown) => {
                   this.todoLoadState.set('error');
+                  if (command.refreshLists) this.listLoadState.set('error');
                   this.showError(error);
                   return EMPTY;
                 }),
                 finalize(() => {
                   if (this.todoLoadState() === 'loading') this.todoLoadState.set('idle');
+                  if (command.refreshLists) {
+                    this.isRefreshing.set(false);
+                    if (this.listLoadState() === 'loading') this.listLoadState.set('idle');
+                  }
                   command.done();
                 }),
               ),
+        ),
+        takeUntilDestroyed(destroyRef),
+      )
+      .subscribe();
+
+    this.completionRequests
+      .pipe(
+        groupBy((command) => command.todoId),
+        mergeMap((requests) =>
+          requests.pipe(
+            exhaustMap((command) =>
+              defer(() => {
+                this.error.set(null);
+                this.completingTodoIds.update((ids) => new Set(ids).add(command.todoId));
+                return this.todoApi.setTodoCompletionStatus(
+                  command.todoListId,
+                  command.todoId,
+                  command.isCompleted,
+                );
+              }).pipe(
+                take(1),
+                tap((updatedTodo) => {
+                  if (this.selectedList()?.id === command.todoListId) this.replaceTodo(updatedTodo);
+                }),
+                catchError((error: unknown) => {
+                  if (this.selectedList()?.id === command.todoListId) this.showError(error);
+                  return EMPTY;
+                }),
+                finalize(() => {
+                  this.completingTodoIds.update((ids) => {
+                    const remaining = new Set(ids);
+                    remaining.delete(command.todoId);
+                    return remaining;
+                  });
+                }),
+              ),
+            ),
+          ),
         ),
         takeUntilDestroyed(destroyRef),
       )
@@ -118,24 +222,88 @@ export class TodoFacade {
     );
   }
 
+  private fetchListPage(pageNumber: number): Observable<PagedResult<TodoList>> {
+    return defer(() => this.todoApi.getTodoLists(pageNumber, this.pageSize)).pipe(
+      take(1),
+      switchMap((page) =>
+        pageNumber > Math.max(1, page.totalPages)
+          ? this.fetchListPage(Math.max(1, page.totalPages))
+          : of(page),
+      ),
+    );
+  }
+
+  private fetchWorkspacePage(command: TodoReadCommand): Observable<WorkspacePage> {
+    return forkJoin({
+      lists: this.fetchListPage(this.listPageNumber()),
+      todos: this.fetchTodoPage(command.listId, command.pageNumber).pipe(
+        catchError((error: unknown) =>
+          this.errors.normalize(error).status === 404 ? of(null) : throwError(() => error),
+        ),
+      ),
+    }).pipe(
+      switchMap(({ lists, todos }) => {
+        const selectedList =
+          lists.items.find((list) => list.id === command.listId) ?? lists.items[0] ?? null;
+        if (selectedList === null) {
+          return of({
+            lists,
+            selectedList,
+            todos: {
+              items: [],
+              pageNumber: 1,
+              pageSize: this.pageSize,
+              totalCount: 0,
+              totalPages: 0,
+            },
+          });
+        }
+        if (selectedList.id === command.listId) {
+          // A successful list response containing the selected list cannot reconcile a failed task read.
+          if (todos === null)
+            return throwError(() => new ApiError(404, 'Seçili liste bulunamadı. Yeniden deneyin.'));
+          return of({ lists, selectedList, todos });
+        }
+        return this.fetchTodoPage(selectedList.id, 1).pipe(
+          map((page) => ({ lists, selectedList, todos: page })),
+        );
+      }),
+    );
+  }
+
+  private applyListPage(page: PagedResult<TodoList>): void {
+    this.todoLists.set(page.items);
+    this.listPageNumber.set(page.pageNumber);
+    this.listTotalCount.set(page.totalCount);
+    this.listTotalPages.set(page.totalPages);
+    this.isApiAvailable.set(true);
+  }
+
+  async refreshWorkspace(): Promise<void> {
+    if (this.destroyed || !this.canRefresh()) return;
+    const list = this.selectedList();
+    if (list === null) {
+      await this.loadTodoLists();
+      return;
+    }
+    await this.requestTodos(list.id, this.todoPageNumber(), true, true);
+  }
+
   async loadTodoLists(preferredListId?: number, pageNumber = this.listPageNumber()): Promise<void> {
+    if (this.destroyed) return;
     this.error.set(null);
     this.listLoadState.set('loading');
 
     try {
-      const page = await firstValueFrom(this.todoApi.getTodoLists(pageNumber, this.pageSize));
-      if (pageNumber > Math.max(1, page.totalPages)) {
-        await this.loadTodoLists(preferredListId, Math.max(1, page.totalPages));
-        return;
-      }
-      this.todoLists.set(page.items);
-      this.listPageNumber.set(page.pageNumber);
-      this.listTotalCount.set(page.totalCount);
-      this.listTotalPages.set(page.totalPages);
-      this.isApiAvailable.set(true);
+      const page = await firstValueFrom(
+        this.fetchListPage(pageNumber).pipe(takeUntilDestroyed(this.destroyRef)),
+      );
+      if (this.destroyed) return;
+      this.applyListPage(page);
 
       if (this.todoLists().length === 0) {
-        this.todoLoads.next(null);
+        this.selectedListIds.next(null);
+        this.todoPages.next(null);
         this.todoLoadState.set('loaded');
         this.selectedList.set(null);
         this.todos.set([]);
@@ -163,12 +331,16 @@ export class TodoFacade {
   }
 
   async selectList(todoList: TodoList): Promise<void> {
+    if (this.selectedList()?.id === todoList.id && this.todoLoadState() !== 'error') {
+      await (this.activeTodoLoad?.promise ?? Promise.resolve());
+      return;
+    }
     this.selectedList.set(todoList);
     this.isRenamingList.set(false);
     this.isCreatingTodo.set(false);
     this.editingTodoId.set(null);
     this.todoPageNumber.set(1);
-    await this.loadTodos(todoList.id);
+    await this.requestTodos(todoList.id, 1, false);
   }
 
   async createList(listName: string): Promise<void> {
@@ -251,10 +423,43 @@ export class TodoFacade {
   }
 
   loadTodos(todoListId: number, pageNumber = this.todoPageNumber()): Promise<void> {
+    return this.requestTodos(todoListId, pageNumber, true);
+  }
+
+  private requestTodos(
+    listId: number,
+    pageNumber: number,
+    force: boolean,
+    refreshLists = false,
+  ): Promise<void> {
     if (this.destroyed) return Promise.resolve();
-    return new Promise<void>((done) =>
-      this.todoLoads.next({ listId: todoListId, pageNumber, done }),
-    );
+    const previous = this.todoPages.value;
+    const sameQuery = previous?.listId === listId && previous.pageNumber === pageNumber;
+    if (sameQuery && !force && this.todoLoadState() !== 'error')
+      return this.activeTodoLoad?.promise ?? Promise.resolve();
+
+    let settle!: () => void;
+    const promise = new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+    const command: TodoReadCommand = {
+      listId,
+      pageNumber,
+      refreshLists,
+      done: () => {
+        if (this.activeTodoLoad?.command === command) this.activeTodoLoad = null;
+        settle();
+      },
+    };
+    this.activeTodoLoad = { command, promise };
+    if (sameQuery) {
+      // Explicit reloads (including CRUD follow-ups and error retries) bypass query deduplication.
+      this.todoReloads.next(command);
+    } else {
+      this.selectedListIds.next(listId);
+      this.todoPages.next(command);
+    }
+    return promise;
   }
 
   async changeListPage(pageNumber: number): Promise<void> {
@@ -285,7 +490,7 @@ export class TodoFacade {
     )
       return;
     this.editingTodoId.set(null);
-    await this.loadTodos(selectedList.id, pageNumber);
+    await this.requestTodos(selectedList.id, pageNumber, false);
   }
 
   async createTodo(request: TodoRequest): Promise<void> {
@@ -353,25 +558,12 @@ export class TodoFacade {
     }
   }
 
-  async setTodoCompletion(todo: TodoItem, isCompleted: boolean): Promise<void> {
+  setTodoCompletion(todo: TodoItem, isCompleted: boolean): void {
     const selectedList = this.selectedList();
-    if (selectedList === null) {
+    if (this.destroyed || selectedList === null || selectedList.id !== todo.todoListId) {
       return;
     }
-
-    const todoListId = selectedList.id;
-
-    try {
-      const updatedTodo = await firstValueFrom(
-        this.todoApi.setTodoCompletionStatus(todoListId, todo.id, isCompleted),
-      );
-
-      if (this.selectedList()?.id !== todoListId) return;
-      this.replaceTodo(updatedTodo);
-    } catch (error: unknown) {
-      this.showError(error);
-    } finally {
-    }
+    this.completionRequests.next({ todoListId: selectedList.id, todoId: todo.id, isCompleted });
   }
 
   async deleteTodo(todo: TodoItem): Promise<void> {

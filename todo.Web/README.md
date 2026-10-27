@@ -69,6 +69,26 @@ Sınır kontrolü, `npm test` ve `npm run build` öncesinde de otomatik çalış
 
 TodoFacade, TodoPage'in `providers` listesinde tanımlıdır. Her açılan görev sayfası kendi state örneğini alır; form taslakları typed Reactive Forms ile ilgili component'te bulunur. Ortak state signal, türetilmiş değerler computed kullanır. switchMap yeni seçimde eski görev okumasını iptal eder. Hatalar `core/errors` üzerinden normalize edilir; `shared/errors` ve `shared/forms` component'leriyle gösterilir. Üç ekranın route/component kodu lazy yüklenir.
 
+Görev tamamlama komutları `groupBy` ile görev kimliğine göre ayrılır; her görevdeki
+`exhaustMap`, istek bitene kadar aynı göreve gelen tekrarları yok sayar. `mergeMap`
+farklı görevlerin eşzamanlı ilerlemesini sağlar. Bekleyen görevin kutusu ve
+düzenle/sil butonları pasiftir; başarı veya hatadan sonra tekrar açılır. Sayfa
+kapatılınca abonelikler `takeUntilDestroyed` ile temizlenir. İsteğin tarayıcıda
+iptal edilmesi, backend'deki yazmanın geri alındığı anlamına gelmez.
+
+Liste ve sayfa seçimleri `combineLatest` ile birleştirilir. Sayfanın hangi listeye
+ait olduğu kontrol edilir; liste değişiminde eski sayfaya gereksiz istek atılmaz.
+`distinctUntilChanged` aynı liste/sayfa seçimini eler. Açık yeniden yüklemeler
+(`todoReloads`) ve CRUD sonrası okumalar bu elemeyi aşar; `merge` bunları normal
+seçimlerle aynı `switchMap` akışına bağlar.
+
+Üst bardaki **Yenile**, seçili liste varsa `forkJoin` ile liste sayfasını ve görev
+sayfasını paralel okur. İki sonuç hazır olunca ekran birlikte güncellenir; hata
+olursa eski veriler korunur. Beklerken değişiklik kontrolleri pasiftir. Seçili
+liste silinmişse kalan listeye geçilir; geçersiz son sayfa düzeltilir. İlk açılışta
+ve seçim yokken önce listeler, ardından seçilen listenin görevleri okunur.
+Form düzenlerken veya bir yazma işlemi sürerken Yenile pasiftir.
+
 ## Ortam ayarları ve deployment
 
 API adresi geliştirmede `src/environments/environment.ts`, production'da

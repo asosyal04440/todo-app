@@ -104,6 +104,14 @@
   outline-offset: 2px;
 }
 
+.completion-control input:disabled {
+  cursor: wait;
+}
+
+.completion-control input:disabled + .custom-checkbox {
+  opacity: 0.5;
+}
+
 .todo-copy {
   min-width: 0;
 }

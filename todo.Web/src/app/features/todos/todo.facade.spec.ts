@@ -124,6 +124,250 @@ describe('TodoFacade', () => {
     expect(facade.todoLoadState()).toBe('loaded');
   });
 
+  it('shares an in-flight selection and ignores a repeated selection after it loads', async () => {
+    const response = new Subject<PagedResult<TodoItem>>();
+    getTodos.mockReturnValue(response);
+    const facade = TestBed.inject(TodoFacade);
+    const first = facade.selectList(list);
+    const repeated = facade.selectList({ ...list });
+    expect(getTodos).toHaveBeenCalledExactlyOnceWith(5, 1, 20);
+    response.next({ ...emptyPage, items: [todo], totalCount: 1, totalPages: 1 });
+    await Promise.all([first, repeated]);
+    await facade.selectList(list);
+    expect(getTodos).toHaveBeenCalledOnce();
+  });
+
+  it('combines list and page changes without requesting the old page of a new list', async () => {
+    getTodos.mockImplementation((_id: number, pageNumber: number) =>
+      of({ ...emptyPage, pageNumber, totalCount: 40, totalPages: 2 }),
+    );
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    await facade.changeTodoPage(2);
+    await facade.changeTodoPage(2);
+    await facade.selectList(list);
+    expect(facade.todoPageNumber()).toBe(2);
+    await facade.selectList({ ...list, id: 6 });
+    expect(getTodos.mock.calls).toEqual([
+      [5, 1, 20],
+      [5, 2, 20],
+      [6, 1, 20],
+    ]);
+  });
+
+  it('allows explicit reloads and post-write reloads for an unchanged query', async () => {
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    await facade.loadTodos(list.id);
+    createTodo.mockReturnValue(of(todo));
+    await facade.createTodo(request);
+    expect(getTodos).toHaveBeenCalledTimes(3);
+    expect(getTodos.mock.calls).toEqual([
+      [5, 1, 20],
+      [5, 1, 20],
+      [5, 1, 20],
+    ]);
+  });
+
+  it('blocks refreshing during edits or writes and loads lists when no selection exists', async () => {
+    const facade = TestBed.inject(TodoFacade);
+    await facade.refreshWorkspace();
+    expect(getTodoLists).toHaveBeenCalledOnce();
+    facade.selectedList.set(list);
+    facade.isCreatingTodo.set(true);
+    await facade.refreshWorkspace();
+    facade.isCreatingTodo.set(false);
+    facade.completingTodoIds.set(new Set([todo.id]));
+    await facade.refreshWorkspace();
+    expect(getTodoLists).toHaveBeenCalledOnce();
+    expect(getTodos).not.toHaveBeenCalled();
+  });
+
+  it('refreshes both resources in parallel, keeps old data until both complete and can repeat the refresh', async () => {
+    const lists = new Subject<PagedResult<typeof list>>();
+    const todos = new Subject<PagedResult<TodoItem>>();
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    facade.todoLists.set([list]);
+    facade.todos.set([todo]);
+    getTodoLists.mockReturnValue(lists);
+    getTodos.mockClear();
+    getTodos.mockReturnValue(todos);
+    const pending = facade.refreshWorkspace();
+    await facade.refreshWorkspace();
+    expect(lists.observed).toBe(true);
+    expect(todos.observed).toBe(true);
+    expect(getTodoLists).toHaveBeenCalledOnce();
+    expect(getTodos).toHaveBeenCalledOnce();
+    expect(facade.isRefreshing()).toBe(true);
+    const renamed = { ...list, name: 'Yeni ad' };
+    lists.next({ ...emptyPage, items: [renamed], totalCount: 1, totalPages: 1 });
+    lists.complete();
+    expect(facade.todoLists()).toEqual([list]);
+    expect(facade.todos()).toEqual([todo]);
+    todos.next({
+      ...emptyPage,
+      items: [{ ...todo, title: 'Güncel görev' }],
+      totalCount: 1,
+      totalPages: 1,
+    });
+    await pending;
+    expect(facade.selectedList()).toEqual(renamed);
+    expect(facade.todos()[0].title).toBe('Güncel görev');
+    expect(facade.isRefreshing()).toBe(false);
+    expect(facade.canRefresh()).toBe(true);
+
+    getTodoLists.mockReturnValue(
+      of({ ...emptyPage, items: [renamed], totalCount: 1, totalPages: 1 }),
+    );
+    getTodos.mockReturnValue(of(emptyPage));
+    await facade.refreshWorkspace();
+    expect(getTodoLists).toHaveBeenCalledTimes(2);
+    expect(getTodos).toHaveBeenCalledTimes(2);
+  });
+
+  it('keeps both old resources on refresh failure and accepts another refresh', async () => {
+    const lists = new Subject<PagedResult<typeof list>>();
+    const todos = new Subject<PagedResult<TodoItem>>();
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    facade.todoLists.set([list]);
+    facade.todos.set([todo]);
+    getTodoLists.mockReturnValue(lists);
+    getTodos.mockReturnValue(todos);
+    const pending = facade.refreshWorkspace();
+    todos.error(new HttpErrorResponse({ status: 503 }));
+    await pending;
+    expect(lists.observed).toBe(false);
+    expect(facade.todoLists()).toEqual([list]);
+    expect(facade.todos()).toEqual([todo]);
+    expect(facade.isRefreshing()).toBe(false);
+    expect(facade.error()?.status).toBe(503);
+    getTodoLists.mockReturnValue(of({ ...emptyPage, items: [list], totalCount: 1, totalPages: 1 }));
+    getTodos.mockReturnValue(of(emptyPage));
+    await facade.refreshWorkspace();
+    expect(facade.error()).toBeNull();
+    expect(facade.todoLoadState()).toBe('loaded');
+  });
+
+  it('cancels both refresh reads when selecting another list and ignores late responses', async () => {
+    const lists = new Subject<PagedResult<typeof list>>();
+    const todos = new Subject<PagedResult<TodoItem>>();
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    getTodoLists.mockReturnValue(lists);
+    getTodos.mockReturnValueOnce(todos).mockReturnValueOnce(of(emptyPage));
+    const pending = facade.refreshWorkspace();
+    await facade.selectList({ ...list, id: 6 });
+    await pending;
+    expect(lists.observed).toBe(false);
+    expect(todos.observed).toBe(false);
+    expect(facade.selectedList()?.id).toBe(6);
+    expect(facade.isRefreshing()).toBe(false);
+    todos.next({ ...emptyPage, items: [todo] });
+    expect(facade.todos()).toEqual([]);
+  });
+
+  it('reconciles a deleted selected list with the remaining list during refresh', async () => {
+    const other = { ...list, id: 6, name: 'İş' };
+    const otherTodo = { ...todo, id: 10, todoListId: 6 };
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    getTodoLists.mockReturnValue(
+      of({ ...emptyPage, items: [other], totalCount: 1, totalPages: 1 }),
+    );
+    getTodos
+      .mockReturnValueOnce(throwError(() => new HttpErrorResponse({ status: 404 })))
+      .mockReturnValueOnce(of({ ...emptyPage, items: [otherTodo], totalCount: 1, totalPages: 1 }));
+    await facade.refreshWorkspace();
+    expect(facade.selectedList()).toEqual(other);
+    expect(facade.todos()).toEqual([otherTodo]);
+    expect(facade.error()).toBeNull();
+    await facade.loadTodos(other.id);
+    expect(getTodos).toHaveBeenLastCalledWith(6, 1, 20);
+  });
+
+  it('clears the selection when refreshing after all lists were deleted', async () => {
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    getTodoLists.mockReturnValue(of(emptyPage));
+    getTodos.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await facade.refreshWorkspace();
+    expect(facade.selectedList()).toBeNull();
+    expect(facade.todos()).toEqual([]);
+    expect(facade.todoTotalCount()).toBe(0);
+    expect(facade.error()).toBeNull();
+  });
+
+  it('corrects both last pages before applying a refresh', async () => {
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    facade.listPageNumber.set(2);
+    facade.todoPageNumber.set(2);
+    getTodoLists
+      .mockReturnValueOnce(of({ ...emptyPage, pageNumber: 2, totalCount: 1, totalPages: 1 }))
+      .mockReturnValueOnce(of({ ...emptyPage, items: [list], totalCount: 1, totalPages: 1 }));
+    getTodos
+      .mockReturnValueOnce(of({ ...emptyPage, pageNumber: 2, totalCount: 1, totalPages: 1 }))
+      .mockReturnValueOnce(of({ ...emptyPage, items: [todo], totalCount: 1, totalPages: 1 }));
+    await facade.refreshWorkspace();
+    expect(facade.listPageNumber()).toBe(1);
+    expect(facade.todoPageNumber()).toBe(1);
+    expect(facade.todos()).toEqual([todo]);
+    expect(getTodoLists.mock.calls).toEqual([
+      [2, 20],
+      [1, 20],
+    ]);
+    expect(getTodos.mock.calls.slice(1)).toEqual([
+      [5, 2, 20],
+      [5, 1, 20],
+    ]);
+  });
+
+  it('preserves the screen when the tasks return 404 but the selected list still appears in the response', async () => {
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    facade.todoLists.set([list]);
+    facade.todos.set([todo]);
+    getTodoLists.mockReturnValue(of({ ...emptyPage, items: [list], totalCount: 1, totalPages: 1 }));
+    getTodos.mockReturnValue(throwError(() => new HttpErrorResponse({ status: 404 })));
+    await facade.refreshWorkspace();
+    expect(facade.todoLists()).toEqual([list]);
+    expect(facade.todos()).toEqual([todo]);
+    expect(facade.error()?.status).toBe(404);
+    expect(facade.isRefreshing()).toBe(false);
+  });
+
+  it('cancels the list read when an empty workspace is destroyed while refreshing', async () => {
+    const response = new Subject<PagedResult<typeof list>>();
+    getTodoLists.mockReturnValue(response);
+    const facade = TestBed.inject(TodoFacade);
+    const pending = facade.refreshWorkspace();
+    expect(response.observed).toBe(true);
+    TestBed.resetTestingModule();
+    await pending;
+    expect(response.observed).toBe(false);
+    response.next({ ...emptyPage, items: [list], totalCount: 1, totalPages: 1 });
+    expect(facade.todoLists()).toEqual([]);
+  });
+
+  it('settles a refresh and cancels both resources on destruction', async () => {
+    const lists = new Subject<PagedResult<typeof list>>();
+    const todos = new Subject<PagedResult<TodoItem>>();
+    const facade = TestBed.inject(TodoFacade);
+    await facade.selectList(list);
+    getTodoLists.mockReturnValue(lists);
+    getTodos.mockReturnValue(todos);
+    const pending = facade.refreshWorkspace();
+    TestBed.resetTestingModule();
+    await pending;
+    expect(lists.observed).toBe(false);
+    expect(todos.observed).toBe(false);
+    expect(facade.isRefreshing()).toBe(false);
+    await facade.refreshWorkspace();
+    expect(getTodoLists).toHaveBeenCalledOnce();
+  });
+
   it('unsubscribes pending reads and settles their promise when the scope is destroyed', async () => {
     const response = new Subject<PagedResult<TodoItem>>();
     getTodos.mockReturnValue(response);
@@ -137,19 +381,110 @@ describe('TodoFacade', () => {
     expect(getTodos).toHaveBeenCalledOnce();
   });
 
-  it('does not apply an old completion response to another selected list', async () => {
+  it('does not apply an old completion response to another selected list', () => {
     const response = new Subject<TodoItem>();
     setTodoCompletionStatus.mockReturnValue(response);
     const facade = TestBed.inject(TodoFacade);
     facade.selectedList.set(list);
     facade.todos.set([todo]);
-    const pending = facade.setTodoCompletion(todo, true);
+    facade.setTodoCompletion(todo, true);
     const other = { ...todo, id: 10, todoListId: 6 };
     facade.selectedList.set({ ...list, id: 6 });
     facade.todos.set([other]);
     response.next({ ...todo, isCompleted: true });
-    await pending;
     expect(facade.todos()).toEqual([other]);
+  });
+
+  it('ignores repeated completion commands until the same task finishes, then accepts a new command', () => {
+    const first = new Subject<TodoItem>();
+    const second = new Subject<TodoItem>();
+    setTodoCompletionStatus.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const facade = TestBed.inject(TodoFacade);
+    facade.selectedList.set(list);
+    facade.todos.set([todo]);
+
+    facade.setTodoCompletion(todo, true);
+    facade.setTodoCompletion(todo, true);
+    facade.setTodoCompletion(todo, false);
+    expect(setTodoCompletionStatus).toHaveBeenCalledExactlyOnceWith(5, 9, true);
+    expect(first.observed).toBe(true);
+    expect(facade.completingTodoIds().has(todo.id)).toBe(true);
+
+    const completed = { ...todo, isCompleted: true };
+    first.next(completed);
+    expect(facade.todos()).toEqual([completed]);
+    expect(facade.completingTodoIds().size).toBe(0);
+    expect(first.observed).toBe(false);
+    expect(setTodoCompletionStatus).toHaveBeenCalledOnce();
+
+    facade.setTodoCompletion(completed, false);
+    expect(setTodoCompletionStatus).toHaveBeenCalledTimes(2);
+    expect(setTodoCompletionStatus).toHaveBeenLastCalledWith(5, 9, false);
+    second.next(todo);
+    expect(facade.todos()).toEqual([todo]);
+    expect(facade.completingTodoIds().size).toBe(0);
+  });
+
+  it('runs completions for different tasks independently and releases only the finished task', () => {
+    const first = new Subject<TodoItem>();
+    const second = new Subject<TodoItem>();
+    const other = { ...todo, id: 10, title: 'Ekmek al' };
+    setTodoCompletionStatus.mockReturnValueOnce(first).mockReturnValueOnce(second);
+    const facade = TestBed.inject(TodoFacade);
+    facade.selectedList.set(list);
+    facade.todos.set([todo, other]);
+
+    facade.setTodoCompletion(todo, true);
+    facade.setTodoCompletion(other, true);
+    expect(setTodoCompletionStatus).toHaveBeenCalledTimes(2);
+    expect(facade.completingTodoIds()).toEqual(new Set([todo.id, other.id]));
+    expect(facade.isSavingTodo()).toBe(false);
+
+    second.next({ ...other, isCompleted: true });
+    expect(facade.completingTodoIds()).toEqual(new Set([todo.id]));
+    first.next({ ...todo, isCompleted: true });
+    expect(facade.todos().every((item) => item.isCompleted)).toBe(true);
+    expect(facade.completingTodoIds().size).toBe(0);
+  });
+
+  it('releases a failed completion and keeps accepting commands for that task', () => {
+    const response = new Subject<TodoItem>();
+    setTodoCompletionStatus
+      .mockReturnValueOnce(response)
+      .mockReturnValueOnce(of({ ...todo, isCompleted: true }));
+    const facade = TestBed.inject(TodoFacade);
+    facade.selectedList.set(list);
+    facade.todos.set([todo]);
+
+    facade.setTodoCompletion(todo, true);
+    response.error(new HttpErrorResponse({ status: 503 }));
+    expect(facade.completingTodoIds().size).toBe(0);
+    expect(facade.todos()).toEqual([todo]);
+    expect(facade.error()?.status).toBe(503);
+
+    facade.setTodoCompletion(todo, true);
+    expect(setTodoCompletionStatus).toHaveBeenCalledTimes(2);
+    expect(facade.todos()[0].isCompleted).toBe(true);
+    expect(facade.error()).toBeNull();
+    expect(facade.completingTodoIds().size).toBe(0);
+  });
+
+  it('unsubscribes pending completions on destruction and ignores later commands and responses', () => {
+    const response = new Subject<TodoItem>();
+    setTodoCompletionStatus.mockReturnValue(response);
+    const facade = TestBed.inject(TodoFacade);
+    facade.selectedList.set(list);
+    facade.todos.set([todo]);
+    facade.setTodoCompletion(todo, true);
+    expect(response.observed).toBe(true);
+
+    TestBed.resetTestingModule();
+    expect(response.observed).toBe(false);
+    expect(facade.completingTodoIds().size).toBe(0);
+    response.next({ ...todo, isCompleted: true });
+    facade.setTodoCompletion(todo, false);
+    expect(setTodoCompletionStatus).toHaveBeenCalledOnce();
+    expect(facade.todos()).toEqual([todo]);
   });
 
   it('creates a task in the selected list and closes its form only after success', async () => {
@@ -192,12 +527,12 @@ describe('TodoFacade', () => {
     expect(getTodos).not.toHaveBeenCalled();
   });
 
-  it('updates completion from the row event payload', async () => {
+  it('updates completion from the row event payload', () => {
     const facade = TestBed.inject(TodoFacade);
     facade.selectedList.set(list);
     facade.todos.set([todo]);
     setTodoCompletionStatus.mockReturnValue(of({ ...todo, isCompleted: true }));
-    await facade.setTodoCompletion(todo, true);
+    facade.setTodoCompletion(todo, true);
     expect(setTodoCompletionStatus).toHaveBeenCalledWith(5, 9, true);
     expect(facade.todos()[0].isCompleted).toBe(true);
   });

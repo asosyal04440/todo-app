@@ -22,6 +22,10 @@
       [user]="auth.currentUser()"
       [isAdmin]="auth.isAdmin()"
       [showCreate]="facade.selectedList() !== null"
+      [showRefresh]="true"
+      [refreshing]="facade.isRefreshing()"
+      [refreshDisabled]="!facade.canRefresh()"
+      (refreshRequested)="facade.refreshWorkspace()"
       (createRequested)="facade.isCreatingTodo.set(!facade.isCreatingTodo())"
       (logoutRequested)="auth.logout()"
     />
@@ -35,6 +39,7 @@
         [todos]="facade.todos()"
         [renaming]="facade.isRenamingList()"
         [saving]="facade.isSavingList()"
+        [busy]="facade.isRefreshing()"
         [apiError]="facade.errorTarget() === 'list-rename' ? facade.error() : null"
         (renameStarted)="facade.isRenamingList.set(true)"
         (renameCancelled)="facade.isRenamingList.set(false)"
@@ -53,8 +58,9 @@
 
       <app-todo-list-view
         [todos]="facade.todos()"
-        [loading]="facade.isLoadingTodos()"
-        [saving]="facade.isSavingTodo()"
+        [completingIds]="facade.completingTodoIds()"
+        [loading]="facade.isLoadingTodos() && !facade.isRefreshing()"
+        [saving]="facade.isSavingTodo() || facade.isRefreshing()"
         [apiError]="
           facade.errorTarget() === 'todo-edit' && facade.errorTodoId() === facade.editingTodoId()
             ? facade.error()
